@@ -32,7 +32,7 @@ user/%.o: user/%.c $(HFILES)
 flexatron: $(SIM_OFILES)
 	$(CC) $(SIM_CFLAGS) $^ -o $@ $(SIM_LIBS)
 
-sim/%.o: %.c $(HFILES)
+sim/%.o: sim/%.c $(HFILES)
 	$(CC) -c $(SIM_CFLAGS) $< -o $@
 
 clean:
