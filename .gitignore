@@ -1,5 +1,5 @@
 flexatron
-student
 *.o
 *.map
 *.sym
+*.bin
