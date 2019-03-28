@@ -1,7 +1,7 @@
 CC = gcc
 LD = ld
 CFLAGS = -std=c99 -pedantic -Wall -Werror -Wextra \
-         -Wstrict-prototypes -Wold-style-definition
+         -Wno-parentheses -Wstrict-prototypes -Wold-style-definition
 HFILES = $(wildcard **/*.h)
 
 USER_CFLAGS = $(CFLAGS) -fno-builtin
