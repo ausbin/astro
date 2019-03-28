@@ -3,6 +3,8 @@
 #include <string.h>
 #include <unicorn/unicorn.h>
 
+#define START_ADDR 0x3000
+
 struct symb {
     bool section;
     uint64_t start_addr;
@@ -163,6 +165,9 @@ struct symb *load_symb(FILE *symbfp) {
 }
 
 int main(void) {
+    uc_engine *uc;
+    uc_err err;
+
     FILE *symbfp = fopen("student.sym", "r");
     if (!symbfp) {
         perror("fopen");
@@ -170,34 +175,111 @@ int main(void) {
     }
 
     struct symb *head = load_symb(symbfp);
+    fclose(symbfp);
 
     if (!head) {
-        fclose(symbfp);
         return 1;
     }
 
-    for (struct symb *n = head; n; n = n->next) {
-        if (n->section) {
-            printf("section .%s at 0x%lx, length 0x%lx\n", n->name, n->start_addr, n->length);
+    if (err = uc_open(UC_ARCH_X86, UC_MODE_64, &uc)) {
+        fprintf(stderr, "uc_open: %s\n", uc_strerror(err));
+        return 1;
+    }
+
+    FILE *binfp = fopen("student.bin", "r");
+    if (!binfp) {
+        perror("fopen");
+        free_symb_list(head);
+        uc_close(uc);
+        return 1;
+    }
+
+    char *binbuf = NULL;
+
+    for (struct symb *s = head; s; s = s->next) {
+        if (!s->section)
+            continue;
+
+        uint32_t perms;
+
+        if (!strcmp(s->name, "text"))
+            perms = UC_PROT_READ | UC_PROT_EXEC;
+        else if (!strcmp(s->name, "data") || !strcmp(s->name, "bss"))
+            perms = UC_PROT_READ | UC_PROT_WRITE;
+        else {
+            fprintf(stderr, "unrecognized section `%s'\n", s->name);
+            fclose(binfp);
+            free_symb_list(head);
+            uc_close(uc);
+            return 1;
+        }
+
+        if (err = uc_mem_map(uc, s->start_addr, s->length, perms)) {
+            fprintf(stderr, "uc_mem_map: %s\n", uc_strerror(err));
+            return 1;
+        }
+
+        char *new_binbuf = realloc(binbuf, s->length);
+        if (!new_binbuf) {
+            perror("realloc");
+            fclose(binfp);
+            free_symb_list(head);
+            uc_close(uc);
+            return 1;
+        }
+        binbuf = new_binbuf;
+
+        if (!strcmp(s->name, "bss")) {
+            memset(binbuf, 0, s->length);
         } else {
-            printf("symbol %s at 0x%lx\n", n->name, n->start_addr);
+            if (fseek(binfp, s->start_addr - START_ADDR, SEEK_SET) < 0) {
+                perror("fseek");
+                free(binbuf);
+                fclose(binfp);
+                free_symb_list(head);
+                uc_close(uc);
+                return 1;
+            }
+
+            if (fread(binbuf, 1, s->length, binfp) < s->length) {
+                if (feof(binfp)) {
+                    fprintf(stderr, "fread: short read\n");
+                } else {
+                    perror("fread");
+                }
+
+                free(binbuf);
+                fclose(binfp);
+                free_symb_list(head);
+                uc_close(uc);
+                return 1;
+            }
+        }
+
+        if (err = uc_mem_write(uc, s->start_addr, binbuf, s->length)) {
+            fprintf(stderr, "uc_mem_write: %s\n", uc_strerror(err));
+            return 1;
         }
     }
 
+    // TODO:
+    // 1. start at the address of the function being tested
+    // 2. add heap to linker script, map accordingly
+    // 3. add stack to linker script, map accordingly
+    // 4. align sections in linker script to 4K
+    //    see: ALIGN in
+    //    https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/4/html/Using_ld_the_GNU_Linker/expressions.html
+    // 5. round lengths up to 4K when mapping. zero out the difference
+    //    so we behave completely deterministically
+    if (err = uc_emu_start(uc, START_ADDR, 0, 0, 0)) {
+        fprintf(stderr, "uc_emu_start: %s\n", uc_strerror(err));
+        return 1;
+    }
+
+    free(binbuf);
+    fclose(binfp);
     free_symb_list(head);
-    fclose(symbfp);
-
-    //uc_engine *uc;
-    //uc_err err;
-
-    //if (err = uc_open(UC_ARCH_X86, UC_MODE_64)) {
-    //    fprintf(stderr, "uc_open: %u\n", err);
-    //    return 1;
-    //}
-
-    ////uc_mem_map(uc, LOAD_ADDR, MEM_SIZE, );
-
-    //uc_close(uc);
+    uc_close(uc);
 
     return 0;
 }
