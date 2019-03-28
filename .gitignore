@@ -1,2 +1,5 @@
 flexatron
+student
 *.o
+*.map
+*.sym
