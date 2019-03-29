@@ -214,12 +214,14 @@ int main(void) {
             return 1;
         }
 
-        if (err = uc_mem_map(uc, s->start_addr, s->length, perms)) {
+        int length_rounded = (s->length + 0xFFF) & ~0xFFF;
+
+        if (err = uc_mem_map(uc, s->start_addr, length_rounded, perms)) {
             fprintf(stderr, "uc_mem_map: %s\n", uc_strerror(err));
             return 1;
         }
 
-        char *new_binbuf = realloc(binbuf, s->length);
+        char *new_binbuf = realloc(binbuf, length_rounded);
         if (!new_binbuf) {
             perror("realloc");
             fclose(binfp);
@@ -228,6 +230,9 @@ int main(void) {
             return 1;
         }
         binbuf = new_binbuf;
+
+        // Zero out rest of section so we behave deterministically
+        memset(binbuf + s->length, 0, length_rounded - s->length);
 
         if (!strcmp(s->name, "bss")) {
             memset(binbuf, 0, s->length);
@@ -256,7 +261,7 @@ int main(void) {
             }
         }
 
-        if (err = uc_mem_write(uc, s->start_addr, binbuf, s->length)) {
+        if (err = uc_mem_write(uc, s->start_addr, binbuf, length_rounded)) {
             fprintf(stderr, "uc_mem_write: %s\n", uc_strerror(err));
             return 1;
         }
@@ -266,12 +271,7 @@ int main(void) {
     // 1. start at the address of the function being tested
     // 2. add heap to linker script, map accordingly
     // 3. add stack to linker script, map accordingly
-    // 4. align sections in linker script to 4K
-    //    see: ALIGN in
-    //    https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/4/html/Using_ld_the_GNU_Linker/expressions.html
-    // 5. round lengths up to 4K when mapping. zero out the difference
-    //    so we behave completely deterministically
-    if (err = uc_emu_start(uc, START_ADDR, 0, 0, 0)) {
+    if (err = uc_emu_start(uc, 0x32f1, 0, 0, 0)) {
         fprintf(stderr, "uc_emu_start: %s\n", uc_strerror(err));
         return 1;
     }
