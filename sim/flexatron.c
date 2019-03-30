@@ -2,167 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unicorn/unicorn.h>
+#include "symb.h"
 
 #define START_ADDR 0x3000
-
-struct symb {
-    bool section;
-    uint64_t start_addr;
-    uint64_t length;
-    char name[32];
-    struct symb *next;
-};
-
-void free_symb_list(struct symb *head) {
-    while (head) {
-        struct symb *next = head->next;
-        free(head);
-        head = next;
-    }
-}
-
-struct symb *load_symb(FILE *symbfp) {
-    char buf[128];
-    int lineno = 1;
-    struct symb *head = NULL;
-
-    while (fgets(buf, sizeof buf, symbfp)) {
-        if (!strchr(buf, '\n')) {
-            fprintf(stderr, "line %d of symbol table exceeds %lu bytes\n", lineno, sizeof (buf));
-            free_symb_list(head);
-            return NULL;
-        }
-
-        char *bp = buf;
-        size_t len = strlen(buf);
-        struct symb symb;
-
-        // section
-        if (len >= 1 && bp[0] == '.') {
-            // skip .
-            bp++;
-            len--;
-
-            unsigned int i = 0;
-            while (len && i < sizeof (symb.name) - 1 && *bp != ' ') {
-                symb.name[i] = *bp;
-                bp++;
-                len--;
-                i++;
-            }
-            symb.name[i] = '\0';
-            if (!len || *bp != ' ')
-                goto bad_format;
-            bp++;
-            len--;
-
-            if (len < 2 || bp[0] != '0' || bp[1] != 'x')
-                goto bad_format;
-
-            // skip 0x
-            bp += 2;
-            len -= 2;
-
-            uint64_t addr = 0;
-            while (len && (*bp >= 'a' && *bp <= 'f' || *bp >= 'A' && *bp <= 'F' || *bp >= '0' && *bp <= '9')) {
-                addr = (addr << 4) + ((*bp >= 'a')? *bp - 'a' + 10 : (*bp >= 'A')? *bp - 'A' + 10 : *bp - '0');
-                bp++;
-                len--;
-            }
-            if (!len || *bp != ' ')
-                goto bad_format;
-            bp++;
-            len--;
-
-            if (len < 2 || bp[0] != '0' || bp[1] != 'x')
-                goto bad_format;
-
-            // skip 0x
-            bp += 2;
-            len -= 2;
-
-            uint64_t length = 0;
-            while (len && (*bp >= 'a' && *bp <= 'f' || *bp >= 'A' && *bp <= 'F' || *bp >= '0' && *bp <= '9')) {
-                length = (length << 4) + ((*bp >= 'a')? *bp - 'a' + 10 : (*bp >= 'A')? *bp - 'A' + 10 : *bp - '0');
-                bp++;
-                len--;
-            }
-            if (!len || *bp != '\n')
-                goto bad_format;
-            bp++;
-            len--;
-            if (len)
-                goto bad_format;
-
-            symb.section = true;
-            symb.start_addr = addr;
-            symb.length = length;
-            symb.next = NULL;
-        } else if (len >= 2 && bp[0] == '0' && bp[1] == 'x') {
-            // skip 0x
-            bp += 2;
-            len -= 2;
-
-            uint64_t addr = 0;
-            while (len && (*bp >= 'a' && *bp <= 'f' || *bp >= 'A' && *bp <= 'F' || *bp >= '0' && *bp <= '9')) {
-                addr = (addr << 4) + ((*bp >= 'a')? *bp - 'a' + 10 : (*bp >= 'A')? *bp - 'A' + 10 : *bp - '0');
-                bp++;
-                len--;
-            }
-            if (!len || *bp != ' ')
-                goto bad_format;
-            bp++;
-            len--;
-
-            unsigned int i = 0;
-            while (len && i < sizeof (symb.name) - 1 && *bp != '\n') {
-                symb.name[i] = *bp;
-                bp++;
-                len--;
-                i++;
-            }
-            symb.name[i] = '\0';
-            if (!len || *bp != '\n')
-                goto bad_format;
-            bp++;
-            len--;
-            if (len)
-                goto bad_format;
-
-            symb.section = false;
-            symb.start_addr = addr;
-            symb.next = NULL;
-        } else
-            goto bad_format;
-
-        struct symb *symb_heap = malloc(sizeof (struct symb));
-
-        if (!symb_heap) {
-            perror("malloc");
-            free_symb_list(head);
-            return NULL;
-        }
-
-        memcpy(symb_heap, &symb, sizeof (struct symb));
-        symb_heap->next = head;
-        head = symb_heap;
-
-        lineno++;
-    }
-
-    if (!feof(symbfp)) {
-        perror("fgets");
-        free_symb_list(head);
-        return NULL;
-    }
-
-    return head;
-
-    bad_format:
-    fprintf(stderr, "line %d of symbol table is of unknown format\n", lineno);
-    free_symb_list(head);
-    return NULL;
-}
 
 int main(void) {
     uc_engine *uc;
@@ -174,10 +16,10 @@ int main(void) {
         return 1;
     }
 
-    struct symb *head = load_symb(symbfp);
+    symb *sym = symb_load(symbfp);
     fclose(symbfp);
 
-    if (!head) {
+    if (!sym) {
         return 1;
     }
 
@@ -186,19 +28,21 @@ int main(void) {
         return 1;
     }
 
+    char *binbuf = NULL;
     FILE *binfp = fopen("student.bin", "r");
     if (!binfp) {
         perror("fopen");
-        free_symb_list(head);
-        uc_close(uc);
-        return 1;
+        goto failure;
     }
 
-    char *binbuf = NULL;
+    static const char *const sections[] = {"text", "data", "bss"};
 
-    for (struct symb *s = head; s; s = s->next) {
-        if (!s->section)
-            continue;
+    for (unsigned int i = 0; i < sizeof sections / sizeof *sections; i++) {
+        symb_section *s = symb_get_section(sym, sections[i]);
+        if (!s) {
+            fprintf(stderr, "missing section `%s'\n", sections[i]);
+            goto failure;
+        }
 
         uint32_t perms;
 
@@ -208,26 +52,20 @@ int main(void) {
             perms = UC_PROT_READ | UC_PROT_WRITE;
         else {
             fprintf(stderr, "unrecognized section `%s'\n", s->name);
-            fclose(binfp);
-            free_symb_list(head);
-            uc_close(uc);
-            return 1;
+            goto failure;
         }
 
         int length_rounded = (s->length + 0xFFF) & ~0xFFF;
 
         if (err = uc_mem_map(uc, s->start_addr, length_rounded, perms)) {
             fprintf(stderr, "uc_mem_map: %s\n", uc_strerror(err));
-            return 1;
+            goto failure;
         }
 
         char *new_binbuf = realloc(binbuf, length_rounded);
         if (!new_binbuf) {
             perror("realloc");
-            fclose(binfp);
-            free_symb_list(head);
-            uc_close(uc);
-            return 1;
+            goto failure;
         }
         binbuf = new_binbuf;
 
@@ -239,11 +77,7 @@ int main(void) {
         } else {
             if (fseek(binfp, s->start_addr - START_ADDR, SEEK_SET) < 0) {
                 perror("fseek");
-                free(binbuf);
-                fclose(binfp);
-                free_symb_list(head);
-                uc_close(uc);
-                return 1;
+                goto failure;
             }
 
             if (fread(binbuf, 1, s->length, binfp) < s->length) {
@@ -252,18 +86,13 @@ int main(void) {
                 } else {
                     perror("fread");
                 }
-
-                free(binbuf);
-                fclose(binfp);
-                free_symb_list(head);
-                uc_close(uc);
-                return 1;
+                goto failure;
             }
         }
 
         if (err = uc_mem_write(uc, s->start_addr, binbuf, length_rounded)) {
             fprintf(stderr, "uc_mem_write: %s\n", uc_strerror(err));
-            return 1;
+            goto failure;
         }
     }
 
@@ -273,13 +102,21 @@ int main(void) {
     // 3. add stack to linker script, map accordingly
     if (err = uc_emu_start(uc, 0x32f1, 0, 0, 0)) {
         fprintf(stderr, "uc_emu_start: %s\n", uc_strerror(err));
-        return 1;
+        goto failure;
     }
 
     free(binbuf);
     fclose(binfp);
-    free_symb_list(head);
+    symb_free(sym);
     uc_close(uc);
 
     return 0;
+
+    failure:
+    free(binbuf);
+    fclose(binfp);
+    symb_free(sym);
+    uc_close(uc);
+
+    return 1;
 }
