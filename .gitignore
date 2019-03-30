@@ -3,3 +3,4 @@ flexatron
 *.map
 *.sym
 *.bin
+*.asm

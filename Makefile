@@ -19,8 +19,9 @@ all: student flexatron
 
 student: student.bin student.sym
 
-student.bin student.map: student.ld $(USER_OFILES)
+student.bin student.map student.asm: student.ld $(USER_OFILES)
 	$(LD) -T student.ld -Map=student.map --oformat=binary -static -o student.bin $(USER_OFILES)
+	objdump -b binary --adjust-vma=0x3000 -m i386:x86-64 -D student.bin >student.asm
 
 # Produce a simpler symbol table file
 student.sym: student.map
