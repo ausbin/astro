@@ -138,7 +138,7 @@ int main(void) {
 
     uint64_t return_address = START_ADDR;
     uint64_t stack_start = heap_start->addr + 0x5000 - 8;
-    uint64_t arg = 2;
+    uint64_t arg = 8;
 
     if (err = uc_mem_write(uc, stack_start, &return_address, 8)) {
         fprintf(stderr, "uc_mem_write return address: %s\n", uc_strerror(err));
@@ -155,13 +155,13 @@ int main(void) {
         goto failure;
     }
 
-    arg = 1;
-    if (err = uc_reg_write(uc, UC_X86_REG_RSI, &arg)) {
-        fprintf(stderr, "uc_reg_write %%rsi: %s\n", uc_strerror(err));
-        goto failure;
-    }
+    //arg = 1;
+    //if (err = uc_reg_write(uc, UC_X86_REG_RSI, &arg)) {
+    //    fprintf(stderr, "uc_reg_write %%rsi: %s\n", uc_strerror(err));
+    //    goto failure;
+    //}
 
-    symb_symbol *func = symb_get_symbol(sym, "add_integers");
+    symb_symbol *func = symb_get_symbol(sym, "fib");
     if (!func) {
         fprintf(stderr, "where is my symbol to test?\n");
         goto failure;
