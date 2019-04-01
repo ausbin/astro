@@ -148,6 +148,79 @@ static int setup_stack_heap(uc_engine *uc, symb *sym) {
     return 0;
 }
 
+static int call_function(uc_engine *uc, symb *sym, uint64_t stack_bottom,
+                         uint64_t *ret, int n, const char *name, ...) {
+    static const int ARG_REGS[] = {
+        UC_X86_REG_RDI,
+        UC_X86_REG_RSI,
+        UC_X86_REG_RDX,
+        UC_X86_REG_RCX,
+        UC_X86_REG_R8,
+        UC_X86_REG_R9,
+    };
+    uc_err err;
+
+    if (n < 0 || n >= (int) (sizeof ARG_REGS / sizeof *ARG_REGS)) {
+        fprintf(stderr, "unsupported number of args %d\n", n);
+        goto failure;
+    }
+
+    symb_symbol *func = symb_get_symbol(sym, name);
+    if (!func) {
+        fprintf(stderr, "cannot find symbol `%s'\n", name);
+        goto failure;
+    }
+
+    // at START_ADDR (entry point), there's a halt instruction which
+    // stops the simulation
+    uint64_t return_address = START_ADDR;
+
+    if (err = uc_mem_write(uc, stack_bottom, &return_address, 8)) {
+        fprintf(stderr, "uc_mem_write return address: %s\n", uc_strerror(err));
+        goto failure;
+    }
+
+    // set stack pointer
+    if (err = uc_reg_write(uc, UC_X86_REG_RSP, &stack_bottom)) {
+        fprintf(stderr, "uc_reg_write %%rsp: %s\n", uc_strerror(err));
+        goto failure;
+    }
+
+    // go ahead and clear base pointer for fun
+    uint64_t zero = 0;
+    if (err = uc_reg_write(uc, UC_X86_REG_RBP, &zero)) {
+        fprintf(stderr, "uc_reg_write %%rbp: %s\n", uc_strerror(err));
+        goto failure;
+    }
+
+    va_list ap;
+    va_start(ap, name);
+
+    for (int i = 0; i < n; i++) {
+        uint64_t arg = va_arg(ap, uint64_t);
+
+        if (err = uc_reg_write(uc, ARG_REGS[i], &arg)) {
+            fprintf(stderr, "uc_reg_write arg #%d: %s\n", i+1, uc_strerror(err));
+            goto failure;
+        }
+    }
+
+    if (err = uc_emu_start(uc, func->addr, 0, 0, 0)) {
+        fprintf(stderr, "uc_emu_start %s(): %s\n", name, uc_strerror(err));
+        goto failure;
+    }
+
+    if (err = uc_reg_read(uc, UC_X86_REG_RAX, ret)) {
+        fprintf(stderr, "uc_reg_read %%rax: %s\n", uc_strerror(err));
+        goto failure;
+    }
+
+    return 1;
+
+    failure:
+    return 0;
+}
+
 int main(void) {
     uc_engine *uc;
     uc_err err;
@@ -177,48 +250,14 @@ int main(void) {
     if (!stack_bottom)
         goto failure;
 
-    uint64_t return_address = START_ADDR;
-    uint64_t arg = 8;
+    for (uint64_t i = 0; i <= 32; i++) {
+        uint64_t ret;
+        if (!call_function(uc, sym, stack_bottom, &ret, 1,
+                           "fib", i))
+            goto failure;
 
-    if (err = uc_mem_write(uc, stack_bottom, &return_address, 8)) {
-        fprintf(stderr, "uc_mem_write return address: %s\n", uc_strerror(err));
-        goto failure;
+        printf("fib(%lu): %lu\n", i, ret);
     }
-
-    if (err = uc_reg_write(uc, UC_X86_REG_RSP, &stack_bottom)) {
-        fprintf(stderr, "uc_reg_write %%rsp: %s\n", uc_strerror(err));
-        goto failure;
-    }
-
-    if (err = uc_reg_write(uc, UC_X86_REG_RDI, &arg)) {
-        fprintf(stderr, "uc_reg_write %%rdi: %s\n", uc_strerror(err));
-        goto failure;
-    }
-
-    //arg = 1;
-    //if (err = uc_reg_write(uc, UC_X86_REG_RSI, &arg)) {
-    //    fprintf(stderr, "uc_reg_write %%rsi: %s\n", uc_strerror(err));
-    //    goto failure;
-    //}
-
-    symb_symbol *func = symb_get_symbol(sym, "fib");
-    if (!func) {
-        fprintf(stderr, "where is my symbol to test?\n");
-        goto failure;
-    }
-
-    if (err = uc_emu_start(uc, func->addr, 0, 0, 0)) {
-        fprintf(stderr, "uc_emu_start: %s\n", uc_strerror(err));
-        goto failure;
-    }
-
-    uint64_t ret;
-    if (err = uc_reg_read(uc, UC_X86_REG_RAX, &ret)) {
-        fprintf(stderr, "uc_reg_read %%rax: %s\n", uc_strerror(err));
-        goto failure;
-    }
-
-    printf("result from emulation: %lu\n", ret);
 
     symb_free(sym);
     uc_close(uc);
