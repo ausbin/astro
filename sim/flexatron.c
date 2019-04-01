@@ -5,37 +5,19 @@
 #include "symb.h"
 
 #define START_ADDR 0x3000
+// TODO: figure out how to grow these
+#define HEAP_STACK_SIZE 0x2000
 
-int main(void) {
-    uc_engine *uc;
+static int load_sections(uc_engine *uc, symb *sym, const char *bin_name) {
+    static const char *const sections[] = {"text", "data", "bss"};
+    char *binbuf = NULL;
     uc_err err;
 
-    FILE *symbfp = fopen("student.sym", "r");
-    if (!symbfp) {
-        perror("fopen");
-        return 1;
-    }
-
-    symb *sym = symb_load(symbfp);
-    fclose(symbfp);
-
-    if (!sym) {
-        return 1;
-    }
-
-    if (err = uc_open(UC_ARCH_X86, UC_MODE_64, &uc)) {
-        fprintf(stderr, "uc_open: %s\n", uc_strerror(err));
-        return 1;
-    }
-
-    char *binbuf = NULL;
-    FILE *binfp = fopen("student.bin", "r");
+    FILE *binfp = fopen(bin_name, "r");
     if (!binfp) {
         perror("fopen");
-        goto failure;
+        return 0;
     }
-
-    static const char *const sections[] = {"text", "data", "bss"};
 
     for (unsigned int i = 0; i < sizeof sections / sizeof *sections; i++) {
         symb_section *s = symb_get_section(sym, sections[i]);
@@ -101,6 +83,21 @@ int main(void) {
         }
     }
 
+    fclose(binfp);
+    free(binbuf);
+    return 1;
+
+    failure:
+    fclose(binfp);
+    free(binbuf);
+    return 0;
+}
+
+// Return the address of the bottom of the stack or 0 on failure
+static int setup_stack_heap(uc_engine *uc, symb *sym) {
+    uc_err err;
+    char *zeros = NULL;
+
     // Now, need to setup stack and heap -- allocate 8K for each
     // Put heap right where __heap_start is (from linker script)
     symb_symbol *heap_start = symb_get_symbol(sym, "__heap_start");
@@ -108,44 +105,87 @@ int main(void) {
         fprintf(stderr, "where is my __heap_start symbol?\n");
         goto failure;
     }
-    if (err = uc_mem_map(uc, heap_start->addr, 0x2000, UC_PROT_READ | UC_PROT_WRITE)) {
-        fprintf(stderr, "uc_mem_map heap: %s\n", uc_strerror(err));
-        goto failure;
-    }
-    char *zeros = calloc(1, 0x2000);
+    zeros = calloc(1, HEAP_STACK_SIZE);
     if (!zeros) {
         perror("calloc");
         goto failure;
     }
-    if (err = uc_mem_write(uc, heap_start->addr, zeros, 0x2000)) {
+
+    // setup heap
+    uint64_t addr = heap_start->addr;
+    if (err = uc_mem_map(uc, addr, HEAP_STACK_SIZE, UC_PROT_READ | UC_PROT_WRITE)) {
+        fprintf(stderr, "uc_mem_map heap: %s\n", uc_strerror(err));
+        goto failure;
+    }
+    if (err = uc_mem_write(uc, addr, zeros, HEAP_STACK_SIZE)) {
         fprintf(stderr, "uc_mem_write heap: %s\n", uc_strerror(err));
         free(zeros);
         goto failure;
     }
 
-    // Leave a 4K guard gap
-    if (err = uc_mem_map(uc, heap_start->addr + 0x3000, 0x2000, UC_PROT_READ | UC_PROT_WRITE)) {
+    addr += HEAP_STACK_SIZE;
+    // 4K guard page against geniuses
+    addr += 0x1000;
+
+    // now setup stack
+    if (err = uc_mem_map(uc, addr, HEAP_STACK_SIZE, UC_PROT_READ | UC_PROT_WRITE)) {
         fprintf(stderr, "uc_mem_map stack: %s\n", uc_strerror(err));
-        free(zeros);
         goto failure;
     }
-    if (err = uc_mem_write(uc, heap_start->addr + 0x3000, zeros, 0x2000)) {
+    if (err = uc_mem_write(uc, addr, zeros, HEAP_STACK_SIZE)) {
         fprintf(stderr, "uc_mem_write stack: %s\n", uc_strerror(err));
-        free(zeros);
         goto failure;
     }
+
+    // Move to bottom of the stack
+    addr += HEAP_STACK_SIZE - 8;
+
     free(zeros);
+    return addr;
+
+    failure:
+    free(zeros);
+    return 0;
+}
+
+int main(void) {
+    uc_engine *uc;
+    uc_err err;
+
+    FILE *symbfp = fopen("student.sym", "r");
+    if (!symbfp) {
+        perror("fopen");
+        return 1;
+    }
+
+    symb *sym = symb_load(symbfp);
+    fclose(symbfp);
+
+    if (!sym)
+        return 1;
+
+    if (err = uc_open(UC_ARCH_X86, UC_MODE_64, &uc)) {
+        fprintf(stderr, "uc_open: %s\n", uc_strerror(err));
+        return 1;
+    }
+
+    if (!load_sections(uc, sym, "student.bin"))
+        goto failure;
+
+    uint64_t stack_bottom = setup_stack_heap(uc, sym);
+
+    if (!stack_bottom)
+        goto failure;
 
     uint64_t return_address = START_ADDR;
-    uint64_t stack_start = heap_start->addr + 0x5000 - 8;
     uint64_t arg = 8;
 
-    if (err = uc_mem_write(uc, stack_start, &return_address, 8)) {
+    if (err = uc_mem_write(uc, stack_bottom, &return_address, 8)) {
         fprintf(stderr, "uc_mem_write return address: %s\n", uc_strerror(err));
         goto failure;
     }
 
-    if (err = uc_reg_write(uc, UC_X86_REG_RSP, &stack_start)) {
+    if (err = uc_reg_write(uc, UC_X86_REG_RSP, &stack_bottom)) {
         fprintf(stderr, "uc_reg_write %%rsp: %s\n", uc_strerror(err));
         goto failure;
     }
@@ -180,16 +220,12 @@ int main(void) {
 
     printf("result from emulation: %lu\n", ret);
 
-    free(binbuf);
-    fclose(binfp);
     symb_free(sym);
     uc_close(uc);
 
     return 0;
 
     failure:
-    free(binbuf);
-    fclose(binfp);
     symb_free(sym);
     uc_close(uc);
 
