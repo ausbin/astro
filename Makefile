@@ -5,7 +5,9 @@ CFLAGS = -std=c99 -pedantic -Wall -Werror -Wextra \
          -Wno-parentheses -Wstrict-prototypes -Wold-style-definition
 HFILES = $(wildcard **/*.h)
 
-USER_CFLAGS = $(CFLAGS) -fno-builtin
+# -fno-asynchronous-unwind-tables removes the annoying .eh_frame section
+# see: https://stackoverflow.com/a/26302715/321301
+USER_CFLAGS = $(CFLAGS) -fno-builtin -fno-asynchronous-unwind-tables
 USER_CFILES = $(wildcard user/*.c)
 USER_SFILES = $(wildcard user/*.s)
 USER_OFILES = $(patsubst %.c,%.o,$(USER_CFILES)) $(patsubst %.s,%.o,$(USER_SFILES))
