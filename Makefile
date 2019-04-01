@@ -9,8 +9,8 @@ HFILES = $(wildcard **/*.h)
 # see: https://stackoverflow.com/a/26302715/321301
 USER_CFLAGS = $(CFLAGS) -fno-builtin -fno-asynchronous-unwind-tables
 USER_CFILES = $(wildcard user/*.c)
-USER_SFILES = $(wildcard user/*.s)
-USER_OFILES = $(patsubst %.c,%.o,$(USER_CFILES)) $(patsubst %.s,%.o,$(USER_SFILES))
+USER_SFILES = $(wildcard user/*.S)
+USER_OFILES = $(patsubst %.c,%.o,$(USER_CFILES)) $(patsubst %.S,%.o,$(USER_SFILES))
 
 SIM_CFLAGS = $(CFLAGS) -g -pthread
 SIM_LIBS = $(shell pkg-config --libs unicorn)
@@ -34,7 +34,7 @@ student.sym: student.map
 user/%.o: user/%.c $(HFILES)
 	$(CC) -c $(USER_CFLAGS) $< -o $@
 
-user/%.o: user/%.s
+user/%.o: user/%.S
 	$(AS) $< -o $@
 
 flexatron: $(SIM_OFILES)
