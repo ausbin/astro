@@ -201,9 +201,12 @@ static int call_function(uc_engine *uc, symb *sym, uint64_t stack_bottom,
 
         if (err = uc_reg_write(uc, ARG_REGS[i], &arg)) {
             fprintf(stderr, "uc_reg_write arg #%d: %s\n", i+1, uc_strerror(err));
+            va_end(ap);
             goto failure;
         }
     }
+
+    va_end(ap);
 
     if (err = uc_emu_start(uc, func->addr, 0, 0, 0)) {
         fprintf(stderr, "uc_emu_start %s(): %s\n", name, uc_strerror(err));
