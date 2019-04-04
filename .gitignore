@@ -4,3 +4,4 @@ flexatron
 *.sym
 *.bin
 *.asm
+*.elf
