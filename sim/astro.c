@@ -5,7 +5,6 @@
 #include <libelf.h>
 #include <gelf.h>
 
-#define START_ADDR 0x3000
 // TODO: figure out how to grow these
 #define HEAP_STACK_SIZE 0x2000
 
@@ -253,6 +252,16 @@ static int setup_stack_heap(uc_engine *uc, Elf *elf) {
     return 0;
 }
 
+static int get_entry_point_addr(Elf *elf, uint64_t *addr_out) {
+    GElf_Ehdr elf_header;
+    if (!gelf_getehdr(elf, &elf_header)) {
+        fprintf(stderr, "gelf_getehdr: %s\n", elf_errmsg(-1));
+        return 0;
+    }
+    *addr_out = elf_header.e_entry;
+    return 1;
+}
+
 static int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
                          uint64_t *ret, size_t n, const char *name, ...) {
     static const int ARG_REGS[] = {
@@ -276,9 +285,11 @@ static int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
         goto failure;
     }
 
-    // at START_ADDR (entry point), there's a halt instruction which
+    // at the entry point, there's a halt instruction which
     // stops the simulation
-    uint64_t return_address = START_ADDR;
+    uint64_t return_address;
+    if (!get_entry_point_addr(elf, &return_address))
+        goto failure;
 
     if (err = uc_mem_write(uc, stack_bottom, &return_address, 8)) {
         fprintf(stderr, "uc_mem_write return address: %s\n", uc_strerror(err));
