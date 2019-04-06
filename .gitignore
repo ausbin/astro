@@ -1,7 +1,4 @@
 flexatron
 *.o
-*.map
-*.sym
-*.bin
 *.asm
 *.elf

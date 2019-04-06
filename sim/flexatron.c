@@ -2,109 +2,215 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unicorn/unicorn.h>
+#include <libelf.h>
+#include <gelf.h>
 #include "symb.h"
 
 #define START_ADDR 0x3000
 // TODO: figure out how to grow these
 #define HEAP_STACK_SIZE 0x2000
 
-static int load_sections(uc_engine *uc, symb *sym, const char *bin_name) {
-    static const char *const sections[] = {"text", "data", "bss"};
-    char *binbuf = NULL;
+static int load_sections(uc_engine *uc, Elf *elf) {
     uc_err err;
 
-    FILE *binfp = fopen(bin_name, "r");
-    if (!binfp) {
-        perror("fopen");
-        return 0;
+    // 4K of zeros, for writing to memory
+    char *zeros = calloc(1, 0x1000);
+    if (!zeros) {
+        perror("calloc");
+        goto failure;
     }
 
-    for (unsigned int i = 0; i < sizeof sections / sizeof *sections; i++) {
-        symb_section *s = symb_get_section(sym, sections[i]);
-        if (!s) {
-            fprintf(stderr, "missing section `%s'\n", sections[i]);
+    Elf_Scn *scn = NULL;
+
+    // the section number of the ELF string section
+    size_t shdrstrndx;
+
+    if (elf_getshdrstrndx(elf, &shdrstrndx)) {
+        fprintf(stderr, "elf_getshdrstrndx: %s\n", elf_errmsg(-1));
+        goto failure;
+    }
+
+    while (scn = elf_nextscn(elf, scn)) {
+        GElf_Shdr shdr;
+        if (!gelf_getshdr(scn, &shdr)) {
+            fprintf(stderr, "elf_getshdr: %s\n", elf_errmsg(-1));
             goto failure;
         }
 
-        // If it's empty, don't bother trying to map since that'll fail
-        // and is pointless anyway
-        if (!s->length)
+        const char *section_name = elf_strptr(elf, shdrstrndx, shdr.sh_name);
+
+        if (!section_name) {
+            fprintf(stderr, "elf_strptr: %s\n", elf_errmsg(-1));
+            goto failure;
+        }
+
+        if (strcmp(section_name, ".text") &&
+            strcmp(section_name, ".data") &&
+            strcmp(section_name, ".bss"))
             continue;
+
+        Elf_Data *data = elf_getdata(scn, NULL);
+
+        if (!data) {
+            fprintf(stderr, "elf_getdata: %s\n", elf_errmsg(-1));
+            goto failure;
+        }
 
         uint32_t perms;
 
-        if (!strcmp(s->name, "text"))
+        if (!strcmp(section_name, ".text"))
             perms = UC_PROT_READ | UC_PROT_EXEC;
-        else if (!strcmp(s->name, "data") || !strcmp(s->name, "bss"))
+        else if (!strcmp(section_name, ".data") || !strcmp(section_name, ".bss"))
             perms = UC_PROT_READ | UC_PROT_WRITE;
         else {
-            fprintf(stderr, "unrecognized section `%s'\n", s->name);
+            fprintf(stderr, "unrecognized section `%s'\n", section_name);
             goto failure;
         }
 
-        int length_rounded = (s->length + 0xFFF) & ~0xFFF;
+        uint64_t length_rounded = (shdr.sh_size + 0xFFF) & ~0xFFF;
 
-        if (err = uc_mem_map(uc, s->start_addr, length_rounded, perms)) {
-            fprintf(stderr, "uc_mem_map section .%s: %s\n", s->name, uc_strerror(err));
+        if (err = uc_mem_map(uc, shdr.sh_addr, length_rounded, perms)) {
+            fprintf(stderr, "uc_mem_map section %s: %s\n", section_name,
+                    uc_strerror(err));
             goto failure;
         }
 
-        char *new_binbuf = realloc(binbuf, length_rounded);
-        if (!new_binbuf) {
-            perror("realloc");
-            goto failure;
-        }
-        binbuf = new_binbuf;
-
-        // Zero out rest of section so we behave deterministically
-        memset(binbuf + s->length, 0, length_rounded - s->length);
-
-        if (!strcmp(s->name, "bss")) {
-            memset(binbuf, 0, s->length);
-        } else {
-            if (fseek(binfp, s->start_addr - START_ADDR, SEEK_SET) < 0) {
-                perror("fseek");
-                goto failure;
-            }
-
-            if (fread(binbuf, 1, s->length, binfp) < s->length) {
-                if (feof(binfp)) {
-                    fprintf(stderr, "fread: short read\n");
-                } else {
-                    perror("fread");
+        if (!strcmp(section_name, ".bss")) {
+            for (uint64_t addr = shdr.sh_addr;
+                 addr < shdr.sh_addr + length_rounded;
+                 addr += 0x1000) {
+                if (err = uc_mem_write(uc, addr, zeros, 0x1000)) {
+                    fprintf(stderr, "uc_mem_write %s: %s\n", section_name,
+                            uc_strerror(err));
+                    goto failure;
                 }
+            }
+        } else {
+            if (err = uc_mem_write(uc, shdr.sh_addr, data->d_buf, shdr.sh_size)) {
+                fprintf(stderr, "uc_mem_write %s: %s\n", section_name,
+                        uc_strerror(err));
                 goto failure;
             }
-        }
 
-        if (err = uc_mem_write(uc, s->start_addr, binbuf, length_rounded)) {
-            fprintf(stderr, "uc_mem_write: %s\n", uc_strerror(err));
-            goto failure;
+            if (shdr.sh_size < length_rounded) {
+                if (err = uc_mem_write(uc, shdr.sh_addr + shdr.sh_size, zeros,
+                                       length_rounded - shdr.sh_size)) {
+                    fprintf(stderr, "uc_mem_write zero padding for %s: %s\n",
+                            section_name, uc_strerror(err));
+                    goto failure;
+                }
+            }
         }
     }
 
-    fclose(binfp);
-    free(binbuf);
+    free(zeros);
     return 1;
 
     failure:
-    fclose(binfp);
-    free(binbuf);
+    free(zeros);
+    return 0;
+}
+
+static int get_symbol_addr(Elf *elf, const char *needle_name, uint64_t *addr_out) {
+    // the section number of the ELF string section
+    size_t shdrstrndx;
+
+    // Grab the section index of the section header string table. This
+    // is NOT the string table, so we know to skip it
+    if (elf_getshdrstrndx(elf, &shdrstrndx)) {
+        fprintf(stderr, "elf_getshdrstrndx: %s\n", elf_errmsg(-1));
+        goto failure;
+    }
+
+    Elf_Scn *scn = NULL;
+    Elf_Scn *strtab_scn = NULL;
+    size_t strtab_idx;
+
+    // Look for a string table section
+    while (scn = elf_nextscn(elf, scn)) {
+        GElf_Shdr shdr;
+        if (!gelf_getshdr(scn, &shdr)) {
+            fprintf(stderr, "gelf_getshdr: %s\n", elf_errmsg(-1));
+            goto failure;
+        }
+
+        strtab_idx = elf_ndxscn(scn);
+
+        if (shdr.sh_type == SHT_STRTAB && shdrstrndx != strtab_idx) {
+            strtab_scn = scn;
+            break;
+        }
+    }
+
+    if (!strtab_scn) {
+        fprintf(stderr, "did not find a strtable in the file!\n");
+        goto failure;
+    }
+
+    scn = NULL;
+
+    // Look for a symbol table section
+    while (scn = elf_nextscn(elf, scn)) {
+        GElf_Shdr shdr;
+        if (!gelf_getshdr(scn, &shdr)) {
+            fprintf(stderr, "gelf_getshdr: %s\n", elf_errmsg(-1));
+            goto failure;
+        }
+
+        if (shdr.sh_type != SHT_SYMTAB)
+            continue;
+
+
+        Elf_Data *data = elf_getdata(scn, NULL);
+
+        if (!data) {
+            fprintf(stderr, "elf_getdata: %s\n", elf_errmsg(-1));
+            goto failure;
+        }
+
+        const uint64_t num_symbols = shdr.sh_size / shdr.sh_entsize;
+
+        for (uint64_t i = 0; i < num_symbols; i++) {
+            GElf_Sym sym;
+            if (!gelf_getsym(data, i, &sym)) {
+                fprintf(stderr, "gelf_getsym: %s\n", elf_errmsg(-1));
+                goto failure;
+            }
+
+            const char *symb_name = elf_strptr(elf, strtab_idx, sym.st_name);
+            if (!symb_name) {
+                fprintf(stderr, "elf_strptr: %s\n", elf_errmsg(-1));
+                goto failure;
+            }
+
+            if ((GELF_ST_TYPE(sym.st_info) == STT_NOTYPE ||
+                 GELF_ST_TYPE(sym.st_info) == STT_OBJECT ||
+                 GELF_ST_TYPE(sym.st_info) == STT_FUNC) &&
+                GELF_ST_BIND(sym.st_info) == STB_GLOBAL &&
+                !strcmp(symb_name, needle_name)) {
+                *addr_out = sym.st_value;
+                return 1;
+            }
+        }
+    }
+
+    failure:
     return 0;
 }
 
 // Return the address of the bottom of the stack or 0 on failure
-static int setup_stack_heap(uc_engine *uc, symb *sym) {
+static int setup_stack_heap(uc_engine *uc, Elf *elf) {
     uc_err err;
     char *zeros = NULL;
 
     // Now, need to setup stack and heap -- allocate 8K for each
     // Put heap right where __heap_start is (from linker script)
-    symb_symbol *heap_start = symb_get_symbol(sym, "__heap_start");
-    if (!heap_start) {
+    uint64_t heap_start_addr;
+    if (!get_symbol_addr(elf, "__heap_start", &heap_start_addr)) {
         fprintf(stderr, "where is my __heap_start symbol?\n");
         goto failure;
     }
+
     zeros = calloc(1, HEAP_STACK_SIZE);
     if (!zeros) {
         perror("calloc");
@@ -112,7 +218,7 @@ static int setup_stack_heap(uc_engine *uc, symb *sym) {
     }
 
     // setup heap
-    uint64_t addr = heap_start->addr;
+    uint64_t addr = heap_start_addr;
     if (err = uc_mem_map(uc, addr, HEAP_STACK_SIZE, UC_PROT_READ | UC_PROT_WRITE)) {
         fprintf(stderr, "uc_mem_map heap: %s\n", uc_strerror(err));
         goto failure;
@@ -148,8 +254,8 @@ static int setup_stack_heap(uc_engine *uc, symb *sym) {
     return 0;
 }
 
-static int call_function(uc_engine *uc, symb *sym, uint64_t stack_bottom,
-                         uint64_t *ret, int n, const char *name, ...) {
+static int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
+                         uint64_t *ret, size_t n, const char *name, ...) {
     static const int ARG_REGS[] = {
         UC_X86_REG_RDI,
         UC_X86_REG_RSI,
@@ -160,13 +266,13 @@ static int call_function(uc_engine *uc, symb *sym, uint64_t stack_bottom,
     };
     uc_err err;
 
-    if (n < 0 || n >= (int) (sizeof ARG_REGS / sizeof *ARG_REGS)) {
-        fprintf(stderr, "unsupported number of args %d\n", n);
+    if (n > sizeof ARG_REGS / sizeof *ARG_REGS) {
+        fprintf(stderr, "unsupported number of args %lu\n", n);
         goto failure;
     }
 
-    symb_symbol *func = symb_get_symbol(sym, name);
-    if (!func) {
+    uint64_t func_addr;
+    if (!get_symbol_addr(elf, name, &func_addr)) {
         fprintf(stderr, "cannot find symbol `%s'\n", name);
         goto failure;
     }
@@ -196,11 +302,11 @@ static int call_function(uc_engine *uc, symb *sym, uint64_t stack_bottom,
     va_list ap;
     va_start(ap, name);
 
-    for (int i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         uint64_t arg = va_arg(ap, uint64_t);
 
         if (err = uc_reg_write(uc, ARG_REGS[i], &arg)) {
-            fprintf(stderr, "uc_reg_write arg #%d: %s\n", i+1, uc_strerror(err));
+            fprintf(stderr, "uc_reg_write arg #%lu: %s\n", i+1, uc_strerror(err));
             va_end(ap);
             goto failure;
         }
@@ -208,7 +314,7 @@ static int call_function(uc_engine *uc, symb *sym, uint64_t stack_bottom,
 
     va_end(ap);
 
-    if (err = uc_emu_start(uc, func->addr, 0, 0, 0)) {
+    if (err = uc_emu_start(uc, func_addr, 0, 0, 0)) {
         fprintf(stderr, "uc_emu_start %s(): %s\n", name, uc_strerror(err));
         goto failure;
     }
@@ -228,47 +334,54 @@ int main(void) {
     uc_engine *uc;
     uc_err err;
 
-    FILE *symbfp = fopen("student.sym", "r");
-    if (!symbfp) {
+    FILE *binfp = fopen("student.elf", "r");
+    if (!binfp) {
         perror("fopen");
-        return 1;
+        return 0;
     }
 
-    symb *sym = symb_load(symbfp);
-    fclose(symbfp);
+    // hi libelf, i'm using the current version!
+    elf_version(EV_CURRENT);
 
-    if (!sym)
-        return 1;
+    Elf *elf = elf_begin(fileno(binfp), ELF_C_READ_MMAP, NULL);
+
+    if (!elf) {
+        fprintf(stderr, "elf_begin: %s\n", elf_errmsg(-1));
+        fclose(binfp);
+        return 0;
+    }
 
     if (err = uc_open(UC_ARCH_X86, UC_MODE_64, &uc)) {
         fprintf(stderr, "uc_open: %s\n", uc_strerror(err));
-        return 1;
+        goto failure;
     }
 
-    if (!load_sections(uc, sym, "student.bin"))
+    if (!load_sections(uc, elf))
         goto failure;
 
-    uint64_t stack_bottom = setup_stack_heap(uc, sym);
+    uint64_t stack_bottom = setup_stack_heap(uc, elf);
 
     if (!stack_bottom)
         goto failure;
 
     for (uint64_t i = 0; i <= 32; i++) {
         uint64_t ret;
-        if (!call_function(uc, sym, stack_bottom, &ret, 1,
+        if (!call_function(uc, elf, stack_bottom, &ret, 1,
                            "fib", i))
             goto failure;
 
         printf("fib(%lu): %lu\n", i, ret);
     }
 
-    symb_free(sym);
+    elf_end(elf);
+    fclose(binfp);
     uc_close(uc);
 
     return 0;
 
     failure:
-    symb_free(sym);
+    elf_end(elf);
+    fclose(binfp);
     uc_close(uc);
 
     return 1;
