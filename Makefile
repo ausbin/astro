@@ -19,7 +19,7 @@ SIM_OFILES = $(patsubst %.c,%.o,$(SIM_CFILES))
 
 .PHONY: all student clean
 
-all: student.elf flexatron
+all: student.elf astro
 
 student.elf student.asm: student.ld $(USER_OFILES)
 	$(LD) -T student.ld -static -o student.elf $(USER_OFILES)
@@ -31,11 +31,11 @@ user/%.o: user/%.c $(HFILES)
 user/%.o: user/%.S
 	$(AS) $< -o $@
 
-flexatron: $(SIM_OFILES)
+astro: $(SIM_OFILES)
 	$(CC) $(SIM_CFLAGS) $^ -o $@ $(SIM_LIBS)
 
 sim/%.o: sim/%.c $(HFILES)
 	$(CC) -c $(SIM_CFLAGS) $< -o $@
 
 clean:
-	rm -f flexatron *.bin *.elf *.map *.sym *.asm *.o **/*.o
+	rm -f astro *.bin *.elf *.map *.sym *.asm *.o **/*.o
