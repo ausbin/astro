@@ -4,7 +4,6 @@
 #include <unicorn/unicorn.h>
 #include <libelf.h>
 #include <gelf.h>
-#include "symb.h"
 
 #define START_ADDR 0x3000
 // TODO: figure out how to grow these
