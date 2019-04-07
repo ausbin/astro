@@ -1,0 +1,3 @@
+.globl stubby
+stubby:
+    ret

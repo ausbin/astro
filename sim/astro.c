@@ -252,6 +252,47 @@ static int setup_stack_heap(uc_engine *uc, Elf *elf) {
     return 0;
 }
 
+static void stubby_hook(uc_engine *uc, uint64_t addr, uint32_t size,
+                        void *user_data) {
+    (void)addr;
+    (void)size;
+    (void)user_data;
+
+    uc_err err;
+    uint64_t ret;
+
+    if (err = uc_reg_read(uc, UC_X86_REG_RDI, &ret)) {
+        fprintf(stderr, "uc_reg_read %%rdi: %s\n", uc_strerror(err));
+        // TODO: bail somehow?
+    }
+
+    printf("stubby hit! n = %lu\n", ret);
+}
+
+static int setup_hooks(uc_engine *uc, Elf *elf) {
+    uint64_t stubby_addr;
+    if (!get_symbol_addr(elf, "stubby", &stubby_addr)) {
+        fprintf(stderr, "cannot find symbol `stubby'\n");
+        goto failure;
+    }
+
+    uc_err err;
+    uc_hook hook;
+
+    uc_cb_hookcode_t hook_cb = stubby_hook;
+
+    if (err = uc_hook_add(uc, &hook, UC_HOOK_CODE, *((void **) &hook_cb), NULL,
+                          stubby_addr, stubby_addr)) {
+        fprintf(stderr, "uc_hook_add: %s\n", uc_strerror(err));
+        goto failure;
+    }
+
+    return 1;
+
+    failure:
+    return 0;
+}
+
 static int get_entry_point_addr(Elf *elf, uint64_t *addr_out) {
     GElf_Ehdr elf_header;
     if (!gelf_getehdr(elf, &elf_header)) {
@@ -329,9 +370,11 @@ static int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
         goto failure;
     }
 
-    if (err = uc_reg_read(uc, UC_X86_REG_RAX, ret)) {
-        fprintf(stderr, "uc_reg_read %%rax: %s\n", uc_strerror(err));
-        goto failure;
+    if (ret) {
+        if (err = uc_reg_read(uc, UC_X86_REG_RAX, ret)) {
+            fprintf(stderr, "uc_reg_read %%rax: %s\n", uc_strerror(err));
+            goto failure;
+        }
     }
 
     return 1;
@@ -374,7 +417,10 @@ int main(void) {
     if (!stack_bottom)
         goto failure;
 
-    for (uint64_t i = 0; i <= 32; i++) {
+    if (!setup_hooks(uc, elf))
+        goto failure;
+
+    for (uint64_t i = 0; i <= 20; i++) {
         uint64_t ret;
         if (!call_function(uc, elf, stack_bottom, &ret, 1,
                            "fib", i))
@@ -382,6 +428,10 @@ int main(void) {
 
         printf("fib(%lu): %lu\n", i, ret);
     }
+
+    printf("\nnow testing stub...\n");
+    if (!call_function(uc, elf, stack_bottom, NULL, 0, "asdf"))
+        goto failure;
 
     elf_end(elf);
     fclose(binfp);
