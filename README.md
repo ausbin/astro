@@ -1,7 +1,7 @@
 astro
 =====
 
-This is an x86-64 simulator designed to be a safe autograder for C code.
+This is an x86-64 simulator designed to autograde C code safely.
 
 Dependencies:
 
@@ -21,7 +21,7 @@ For reference, the Old Way of C autograding works as follows:
 
  1. Autograder starts up on baremetal
  2. Autograder jumps into student code
- 3. Student code jumps back
+ 3. Student code jumps back into autograder code
  4. Autograder asserts that student code worked properly
  5. For next test, goto 2
 
@@ -29,9 +29,10 @@ For reference, the Old Way of C autograding works as follows:
 
 ### Problem: Student Can Jump Wherever
 
-When the autograder and studetn code share an address space, to pass
+When the autograder and student code share an address space, to pass
 tests, a student can jump back into the grader past any assertions:
-<https://austinjadams.com/blog/acing-a-c-homework/>. With astro, only the student code runs in the simulator.
+<https://austinjadams.com/blog/acing-a-c-homework/>. With astro, only
+the student code runs in the simulator.
 
 ### Problem: Student Can Trash Autograder Memory
 
@@ -48,17 +49,17 @@ autograder memory.
 ### Problem: Student Can Run Arbitrary Syscalls
 
 This grants too much power to break the autograder and possibly connect
-to the network to upload the autograder source or worse.
+to the network to upload the autograder source or worse. In astro, there
+is no support for syscalls.
 
-In astro, there is no support for syscalls.
-
-### Problem: Emulating Hardware Features Requires Dark Magic
+### Problem: Simulating Memory-Mapped Hardware Features Requires Dark Magic
 
 Whereas currently autograding access to memory-mapped registers requires
 dark `mmap()` magic
 (<https://austinjadams.com/blog/autograding-gba-dma/>), astro could
-simply monitor those memory mapped addresses and log the access and then
-simulate the hardware before restarting the simulation.
+simply monitor the special addresses. When a student writes to them,
+astro could log the access and then simulate the hardware before
+restarting the simulation.
 
 ### Problem: Checking for Memory Leaks Is Fundamentally Broken
 
@@ -80,10 +81,10 @@ This setup works well enough, but it has several big limitations.
 When an assertion fails, the whole autograder exits. This happens before
 step #6 happens, since step #5 needs to inspect data structures before
 freeing them. This means that when this inspection fails, memory does
-not get freed, and valgrind reports a leak. This is currently mitigated
-by only running valgrind on individual tests that have passed, but when
-students use the valgrind task in the Makefile, they find the behavior
-confusing.
+not get freed, and valgrind reports a leak. Current autograders mitigate
+this by only running valgrind on individual tests that have passed, but
+when students use the valgrind task in the Makefile and have failing
+tests, they find memory leaks reported for other tests confusing.
 
 #### Sub-problem: `free()`ing Uninitialized Pointers in Data Structures
 
@@ -98,7 +99,7 @@ students don't understand ("what am I freeing wrong?").
 #### Solution: Managed Heap
 
 astro will manage the simulated heap outside the simulator, so it knows
-what has been allocated and whwhat hasn't.
+what has been allocated and what hasn't.
 
 ### Problem: GNU/Linux Error Messages Are Cryptic
 
