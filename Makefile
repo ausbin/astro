@@ -1,4 +1,3 @@
-AS = as
 CC = gcc
 LD = ld
 CFLAGS = -g -pedantic -Wall -Werror -Wextra \
@@ -28,8 +27,8 @@ student.elf student.asm: student.ld $(USER_OFILES)
 user/%.o: user/%.c $(HFILES)
 	$(CC) -c $(USER_CFLAGS) $< -o $@
 
-user/%.o: user/%.S
-	$(AS) $< -o $@
+user/%.o: user/%.S $(HFILES)
+	$(CC) -c $(USER_CFLAGS) $< -o $@
 
 astro: $(SIM_OFILES)
 	$(CC) $(SIM_CFLAGS) $^ -o $@ $(SIM_LIBS)
