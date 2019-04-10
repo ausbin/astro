@@ -13,6 +13,8 @@ int main(void) {
 
     FILE *binfp = NULL;
     Elf *elf = NULL;
+    mem_ctx *ctx = NULL;
+
     if (!open_elf("student.elf", &binfp, &elf))
         goto failure;
 
@@ -24,9 +26,8 @@ int main(void) {
     if (!load_sections(uc, elf))
         goto failure;
 
-    uint64_t stack_bottom = setup_stack_heap(uc, elf);
-
-    if (!stack_bottom)
+    ctx = mem_ctx_new(uc, elf);
+    if (!ctx)
         goto failure;
 
     if (!setup_hooks(uc, elf))
@@ -34,7 +35,7 @@ int main(void) {
 
     for (uint64_t i = 0; i <= 20; i++) {
         uint64_t ret;
-        if (!call_function(uc, elf, stack_bottom, &ret, 1,
+        if (!call_function(uc, elf, ctx->stack_end, &ret, 1,
                            "fib", i))
             goto failure;
 
@@ -42,9 +43,10 @@ int main(void) {
     }
 
     printf("\nnow testing stub...\n");
-    if (!call_function(uc, elf, stack_bottom, NULL, 0, "asdf"))
+    if (!call_function(uc, elf, ctx->stack_end, NULL, 0, "asdf"))
         goto failure;
 
+    free(ctx);
     elf_end(elf);
     fclose(binfp);
     uc_close(uc);
@@ -52,6 +54,7 @@ int main(void) {
     return 0;
 
     failure:
+    free(ctx);
     if (elf) elf_end(elf);
     if (binfp) fclose(binfp);
     uc_close(uc);

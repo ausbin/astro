@@ -1,5 +1,3 @@
-#include <unicorn/unicorn.h>
-#include <libelf.h>
 #include "defs.h"
 
 // Contains code for calling/stubbing functions
@@ -33,6 +31,8 @@ int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
     uint64_t return_address;
     if (!get_entry_point_addr(elf, &return_address))
         goto failure;
+
+    stack_bottom -= 8;
 
     if (err = uc_mem_write(uc, stack_bottom, &return_address, 8)) {
         fprintf(stderr, "uc_mem_write return address: %s\n", uc_strerror(err));
@@ -85,57 +85,6 @@ int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
     return 0;
 }
 
-// Return the address of the bottom of the stack or 0 on failure
-int setup_stack_heap(uc_engine *uc, Elf *elf) {
-    uc_err err;
-
-    // Now, need to setup stack and heap -- allocate 8K for each
-    // Put heap right where __heap_start is (from linker script)
-    uint64_t heap_start_addr;
-    if (!get_symbol_addr(elf, "__heap_start", &heap_start_addr)) {
-        fprintf(stderr, "where is my __heap_start symbol?\n");
-        goto failure;
-    }
-
-    // setup heap
-    uint64_t addr = heap_start_addr;
-    if (err = uc_mem_map(uc, addr, HEAP_STACK_SIZE, UC_PROT_READ | UC_PROT_WRITE)) {
-        fprintf(stderr, "uc_mem_map heap: %s\n", uc_strerror(err));
-        goto failure;
-    }
-
-    for (uint64_t a = addr; a < addr + HEAP_STACK_SIZE; a += 0x1000) {
-        if (err = uc_mem_write(uc, a, four_kb_of_zeros, 0x1000)) {
-            fprintf(stderr, "uc_mem_write heap: %s\n", uc_strerror(err));
-            goto failure;
-        }
-    }
-
-    addr += HEAP_STACK_SIZE;
-    // 4K guard page against geniuses
-    addr += 0x1000;
-
-    // now setup stack
-    if (err = uc_mem_map(uc, addr, HEAP_STACK_SIZE, UC_PROT_READ | UC_PROT_WRITE)) {
-        fprintf(stderr, "uc_mem_map stack: %s\n", uc_strerror(err));
-        goto failure;
-    }
-    for (uint64_t a = addr; a < addr + HEAP_STACK_SIZE; a += 0x1000) {
-        if (err = uc_mem_write(uc, a, four_kb_of_zeros, 0x1000)) {
-            fprintf(stderr, "uc_mem_write stack: %s\n", uc_strerror(err));
-            goto failure;
-        }
-    }
-
-    // Move to bottom of the stack
-    addr += HEAP_STACK_SIZE - 8;
-
-    return addr;
-
-    failure:
-    return 0;
-}
-
 static void stubby_hook(uc_engine *uc, uint64_t addr, uint32_t size,
                         void *user_data) {
     (void)addr;
@@ -165,7 +114,7 @@ int setup_hooks(uc_engine *uc, Elf *elf) {
 
     uc_cb_hookcode_t hook_cb = stubby_hook;
 
-    if (err = uc_hook_add(uc, &hook, UC_HOOK_CODE, *((void **) &hook_cb), NULL,
+    if (err = uc_hook_add(uc, &hook, UC_HOOK_CODE, FP2VOID(hook_cb), NULL,
                           stubby_addr, stubby_addr)) {
         fprintf(stderr, "uc_hook_add: %s\n", uc_strerror(err));
         goto failure;
