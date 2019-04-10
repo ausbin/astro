@@ -41,14 +41,6 @@ int get_entry_point_addr(Elf *elf, uint64_t *addr_out) {
 
 int load_sections(uc_engine *uc, Elf *elf) {
     uc_err err;
-
-    // 4K of zeros, for writing to memory
-    char *zeros = calloc(1, 0x1000);
-    if (!zeros) {
-        perror("calloc");
-        goto failure;
-    }
-
     Elf_Scn *scn = NULL;
 
     // the section number of the ELF section header string section
@@ -108,7 +100,7 @@ int load_sections(uc_engine *uc, Elf *elf) {
             for (uint64_t addr = shdr.sh_addr;
                  addr < shdr.sh_addr + length_rounded;
                  addr += 0x1000) {
-                if (err = uc_mem_write(uc, addr, zeros, 0x1000)) {
+                if (err = uc_mem_write(uc, addr, four_kb_of_zeros, 0x1000)) {
                     fprintf(stderr, "uc_mem_write %s: %s\n", section_name,
                             uc_strerror(err));
                     goto failure;
@@ -122,7 +114,8 @@ int load_sections(uc_engine *uc, Elf *elf) {
             }
 
             if (shdr.sh_size < length_rounded) {
-                if (err = uc_mem_write(uc, shdr.sh_addr + shdr.sh_size, zeros,
+                if (err = uc_mem_write(uc, shdr.sh_addr + shdr.sh_size,
+                                       four_kb_of_zeros,
                                        length_rounded - shdr.sh_size)) {
                     fprintf(stderr, "uc_mem_write zero padding for %s: %s\n",
                             section_name, uc_strerror(err));
@@ -132,11 +125,9 @@ int load_sections(uc_engine *uc, Elf *elf) {
         }
     }
 
-    free(zeros);
     return 1;
 
     failure:
-    free(zeros);
     return 0;
 }
 

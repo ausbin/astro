@@ -4,6 +4,9 @@
 #include <libelf.h>
 #include "defs.h"
 
+// Useful for zeroing out stuff
+const char four_kb_of_zeros[0x1000];
+
 int main(void) {
     uc_engine *uc;
     uc_err err;

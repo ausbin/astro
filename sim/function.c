@@ -88,7 +88,6 @@ int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
 // Return the address of the bottom of the stack or 0 on failure
 int setup_stack_heap(uc_engine *uc, Elf *elf) {
     uc_err err;
-    char *zeros = NULL;
 
     // Now, need to setup stack and heap -- allocate 8K for each
     // Put heap right where __heap_start is (from linker script)
@@ -98,22 +97,18 @@ int setup_stack_heap(uc_engine *uc, Elf *elf) {
         goto failure;
     }
 
-    zeros = calloc(1, HEAP_STACK_SIZE);
-    if (!zeros) {
-        perror("calloc");
-        goto failure;
-    }
-
     // setup heap
     uint64_t addr = heap_start_addr;
     if (err = uc_mem_map(uc, addr, HEAP_STACK_SIZE, UC_PROT_READ | UC_PROT_WRITE)) {
         fprintf(stderr, "uc_mem_map heap: %s\n", uc_strerror(err));
         goto failure;
     }
-    if (err = uc_mem_write(uc, addr, zeros, HEAP_STACK_SIZE)) {
-        fprintf(stderr, "uc_mem_write heap: %s\n", uc_strerror(err));
-        free(zeros);
-        goto failure;
+
+    for (uint64_t a = addr; a < addr + HEAP_STACK_SIZE; a += 0x1000) {
+        if (err = uc_mem_write(uc, a, four_kb_of_zeros, 0x1000)) {
+            fprintf(stderr, "uc_mem_write heap: %s\n", uc_strerror(err));
+            goto failure;
+        }
     }
 
     addr += HEAP_STACK_SIZE;
@@ -125,19 +120,19 @@ int setup_stack_heap(uc_engine *uc, Elf *elf) {
         fprintf(stderr, "uc_mem_map stack: %s\n", uc_strerror(err));
         goto failure;
     }
-    if (err = uc_mem_write(uc, addr, zeros, HEAP_STACK_SIZE)) {
-        fprintf(stderr, "uc_mem_write stack: %s\n", uc_strerror(err));
-        goto failure;
+    for (uint64_t a = addr; a < addr + HEAP_STACK_SIZE; a += 0x1000) {
+        if (err = uc_mem_write(uc, a, four_kb_of_zeros, 0x1000)) {
+            fprintf(stderr, "uc_mem_write stack: %s\n", uc_strerror(err));
+            goto failure;
+        }
     }
 
     // Move to bottom of the stack
     addr += HEAP_STACK_SIZE - 8;
 
-    free(zeros);
     return addr;
 
     failure:
-    free(zeros);
     return 0;
 }
 
