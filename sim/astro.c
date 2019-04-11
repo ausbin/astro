@@ -7,6 +7,17 @@
 // Useful for zeroing out stuff
 const char four_kb_of_zeros[0x1000];
 
+static void stubby(uc_engine *uc, Elf *elf, void *user_data) {
+    (void)user_data;
+    (void)elf;
+
+    uint64_t n;
+    if (!stub_arg(uc, 0, &n))
+        return;
+
+    printf("stubby called! n = %lu\n", n);
+}
+
 int main(void) {
     uc_engine *uc;
     uc_err err;
@@ -30,7 +41,7 @@ int main(void) {
     if (!ctx)
         goto failure;
 
-    if (!setup_hooks(uc, elf))
+    if (!stub_setup(uc, elf, NULL, "stubby", stubby))
         goto failure;
 
     for (uint64_t i = 0; i <= 20; i++) {

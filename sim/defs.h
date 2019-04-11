@@ -19,11 +19,6 @@ extern int get_entry_point_addr(Elf *elf, uint64_t *addr_out);
 extern int load_sections(uc_engine *uc, Elf *elf);
 extern int get_symbol_addr(Elf *elf, const char *needle_name, uint64_t *addr_out);
 
-// function.c
-extern int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
-                  uint64_t *ret, size_t n, const char *name, ...);
-extern int setup_hooks(uc_engine *uc, Elf *elf);
-
 // mem.c
 // (exclusive) high end of stack
 #define STACK_HIGH 0x800000000000
@@ -39,5 +34,15 @@ typedef struct {
 } mem_ctx;
 
 mem_ctx *mem_ctx_new(uc_engine *uc, Elf *elf);
+
+// function.c
+typedef void (*stub_impl_t)(uc_engine *uc, Elf *elf, void *user_data);
+
+extern int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
+                  uint64_t *ret, size_t n, const char *name, ...);
+extern int stub_setup(uc_engine *uc, Elf *elf, void *user_data, const char *name,
+                      stub_impl_t impl);
+extern int stub_arg(uc_engine *uc, size_t idx, uint64_t *arg_out);
+
 
 #endif
