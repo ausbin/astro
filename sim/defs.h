@@ -67,6 +67,9 @@ extern int get_symbol_addr(astro_t *astro, const char *needle_name,
 // Protected padding on each side of block
 #define HEAP_BLOCK_PADDING 32
 
+// The symbol defined in student.ld as marking the end of the student program
+#define HEAP_START_SYMBOL "__heap_start"
+
 extern int mem_ctx_setup(astro_t *astro);
 extern void mem_ctx_cleanup(astro_t *astro);
 

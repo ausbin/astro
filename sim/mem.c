@@ -271,8 +271,9 @@ int mem_ctx_setup(astro_t *astro) {
 
     // Now, need to setup stack and heap -- allocate 8K for each
     // Put heap right where __heap_start is (from linker script)
-    if (!get_symbol_addr(astro, "__heap_start", &astro->mem_ctx.heap_start)) {
-        fprintf(stderr, "where is my __heap_start symbol?\n");
+    if (!get_symbol_addr(astro, HEAP_START_SYMBOL,
+                         &astro->mem_ctx.heap_start)) {
+        fprintf(stderr, "where is my " HEAP_START_SYMBOL " symbol?\n");
         goto failure;
     }
     // zero-length heap for now
