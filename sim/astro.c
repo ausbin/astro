@@ -2,75 +2,43 @@
 #include <stdlib.h>
 #include "defs.h"
 
-static void stubby(uc_engine *uc, Elf *elf, void *user_data) {
-    (void)user_data;
-    (void)elf;
-
-    uint64_t n;
-    if (!stub_arg(uc, 0, &n))
-        return;
-
-    printf("stubby called! n = 0x%lx\n", n);
-}
-
-int main(void) {
-    uc_engine *uc;
+astro_t *astro_new(const char *elf_filename) {
     uc_err err;
 
-    FILE *binfp = NULL;
-    Elf *elf = NULL;
-    Dwarf *dwarf = NULL;
-    mem_ctx_t *mem_ctx = NULL;
+    astro_t *astro = calloc(1, sizeof (astro_t));
+    if (!astro) {
+        perror("calloc");
+        goto failure;
+    }
 
-    if (!open_elf("student.elf", &binfp, &elf, &dwarf))
+    if (!open_elf(elf_filename, &astro->binfp, &astro->elf, &astro->dwarf))
         goto failure;
 
-    if (err = uc_open(UC_ARCH_X86, UC_MODE_64, &uc)) {
+    if (err = uc_open(UC_ARCH_X86, UC_MODE_64, &astro->uc)) {
         fprintf(stderr, "uc_open: %s\n", uc_strerror(err));
         goto failure;
     }
 
-    // Set 4K of uninitialized memory to 0x69s
-    // (reused to initialize memory deterministically)
-    mem_uninit_init();
-
-    if (!load_sections(uc, elf))
+    if (!load_sections(astro))
         goto failure;
 
-    mem_ctx = mem_ctx_new(uc, elf);
-    if (!mem_ctx)
+    if (!mem_ctx_setup(astro))
         goto failure;
 
-    if (!stub_setup(uc, elf, NULL, "stubby", stubby))
-        goto failure;
-
-    for (uint64_t i = 0; i <= 20; i++) {
-        uint64_t ret;
-        if (!call_function(uc, elf, mem_ctx->stack_end, &ret, 1,
-                           "fib", i))
-            goto failure;
-
-        printf("fib(%lu): %lu\n", i, ret);
-    }
-
-    printf("\nnow testing stub...\n");
-    if (!call_function(uc, elf, mem_ctx->stack_end, NULL, 0, "asdf"))
-        goto failure;
-
-    mem_ctx_free(mem_ctx);
-    dwarf_end(dwarf);
-    elf_end(elf);
-    fclose(binfp);
-    uc_close(uc);
-
-    return 0;
+    return astro;
 
     failure:
-    if (mem_ctx) mem_ctx_free(mem_ctx);
-    if (dwarf) dwarf_end(dwarf);
-    if (elf) elf_end(elf);
-    if (binfp) fclose(binfp);
-    uc_close(uc);
+    astro_free(astro);
+    return NULL;
+}
 
-    return 1;
+void astro_free(astro_t *astro) {
+    if (astro) {
+        mem_ctx_cleanup(astro);
+        if (astro->dwarf) dwarf_end(astro->dwarf);
+        if (astro->elf) elf_end(astro->elf);
+        if (astro->binfp) fclose(astro->binfp);
+        if (astro->uc) uc_close(astro->uc);
+        free(astro);
+    }
 }

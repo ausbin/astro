@@ -11,30 +11,7 @@
 // hate.
 #define FP2VOID(fp_var) (*((void **) &(fp_var)))
 
-// astro.c
-
-// elf.c
-extern int open_elf(const char *filename, FILE **fp_out, Elf **elf_out,
-                    Dwarf **dwarf_out);
-extern int get_entry_point_addr(Elf *elf, uint64_t *addr_out);
-extern int load_sections(uc_engine *uc, Elf *elf);
-extern int get_symbol_addr(Elf *elf, const char *needle_name,
-                           uint64_t *addr_out);
-
-// mem.c
-#define ROUND_TO_4K(size) (((size) + 0xfff) & ~0xfff)
-
-// What to fill "uninitialized" memory with
-// Why not zero? Student code should break if they assume memory is
-// zeroed
-#define UNINIT_BYTE 0x69
-
-// (exclusive) high end of stack
-#define STACK_HIGH 0x800000000000
-
-// Protected padding on each side of block
-#define HEAP_BLOCK_PADDING 32
-
+// mem.c pt. 1
 typedef struct heap_block {
     // pointer to beginning of padding
     uint64_t addr;
@@ -56,23 +33,55 @@ typedef struct {
     heap_block_t *heap_blocks;
 } mem_ctx_t;
 
-// Set the four_kb_of_uninit array (below) to all UNINIT_BYTE
-extern void mem_uninit_init(void);
-extern mem_ctx_t *mem_ctx_new(uc_engine *uc, Elf *elf);
-extern void mem_ctx_free(mem_ctx_t *ctx);
+// astro.c
+typedef struct {
+    FILE *binfp;
+    Elf *elf;
+    Dwarf *dwarf;
+    uc_engine *uc;
+    mem_ctx_t mem_ctx;
+} astro_t;
+
+extern astro_t *astro_new(const char *elf_filename);
+extern void astro_free(astro_t *astro);
+
+// elf.c
+extern int open_elf(const char *filename, FILE **fp_out, Elf **elf_out,
+                    Dwarf **dwarf_out);
+extern int get_entry_point_addr(astro_t *astro, uint64_t *addr_out);
+extern int load_sections(astro_t *astro);
+extern int get_symbol_addr(astro_t *astro, const char *needle_name,
+                           uint64_t *addr_out);
+
+// mem.c pt. 2
+#define ROUND_TO_4K(size) (((size) + 0xfff) & ~0xfff)
+
+// What to fill "uninitialized" memory with
+// Why not zero? Student code should break if they assume memory is
+// zeroed
+#define UNINIT_BYTE 0x69
+
+// (exclusive) high end of stack
+#define STACK_HIGH 0x800000000000
+
+// Protected padding on each side of block
+#define HEAP_BLOCK_PADDING 32
+
+extern int mem_ctx_setup(astro_t *astro);
+extern void mem_ctx_cleanup(astro_t *astro);
 
 extern const char four_kb_of_zeros[0x1000];
 extern char four_kb_of_uninit[0x1000];
 
 // function.c
-typedef void (*stub_impl_t)(uc_engine *uc, Elf *elf, void *user_data);
+typedef void (*stub_impl_t)(astro_t *astro, void *user_data);
 
-extern int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
-                         uint64_t *ret, size_t n, const char *name, ...);
-extern int stub_setup(uc_engine *uc, Elf *elf, void *user_data, const char *name,
+extern int call_function(astro_t *astro, uint64_t *ret, size_t n,
+                         const char *name, ...);
+extern int stub_setup(astro_t *astro, void *user_data, const char *name,
                       stub_impl_t impl);
-extern int stub_arg(uc_engine *uc, size_t idx, uint64_t *arg_out);
-extern int stub_ret(uc_engine *uc, uint64_t retval);
-extern void stub_die(uc_engine *uc);
+extern int stub_arg(astro_t *astro, size_t idx, uint64_t *arg_out);
+extern int stub_ret(astro_t *astro, uint64_t retval);
+extern void stub_die(astro_t *astro);
 
 #endif

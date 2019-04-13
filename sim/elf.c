@@ -41,9 +41,9 @@ int open_elf(const char *filename, FILE **fp_out, Elf **elf_out,
     return 1;
 }
 
-int get_entry_point_addr(Elf *elf, uint64_t *addr_out) {
+int get_entry_point_addr(astro_t *astro, uint64_t *addr_out) {
     GElf_Ehdr elf_header;
-    if (!gelf_getehdr(elf, &elf_header)) {
+    if (!gelf_getehdr(astro->elf, &elf_header)) {
         fprintf(stderr, "gelf_getehdr: %s\n", elf_errmsg(-1));
         return 0;
     }
@@ -51,26 +51,27 @@ int get_entry_point_addr(Elf *elf, uint64_t *addr_out) {
     return 1;
 }
 
-int load_sections(uc_engine *uc, Elf *elf) {
+int load_sections(astro_t *astro) {
     uc_err err;
     Elf_Scn *scn = NULL;
 
     // the section number of the ELF section header string section
     size_t shdrstrndx;
 
-    if (elf_getshdrstrndx(elf, &shdrstrndx)) {
+    if (elf_getshdrstrndx(astro->elf, &shdrstrndx)) {
         fprintf(stderr, "elf_getshdrstrndx: %s\n", elf_errmsg(-1));
         goto failure;
     }
 
-    while (scn = elf_nextscn(elf, scn)) {
+    while (scn = elf_nextscn(astro->elf, scn)) {
         GElf_Shdr shdr;
         if (!gelf_getshdr(scn, &shdr)) {
             fprintf(stderr, "elf_getshdr: %s\n", elf_errmsg(-1));
             goto failure;
         }
 
-        const char *section_name = elf_strptr(elf, shdrstrndx, shdr.sh_name);
+        const char *section_name = elf_strptr(astro->elf, shdrstrndx,   
+                                              shdr.sh_name);
 
         if (!section_name) {
             fprintf(stderr, "elf_strptr: %s\n", elf_errmsg(-1));
@@ -102,7 +103,7 @@ int load_sections(uc_engine *uc, Elf *elf) {
 
         uint64_t length_rounded = ROUND_TO_4K(shdr.sh_size);
 
-        if (err = uc_mem_map(uc, shdr.sh_addr, length_rounded, perms)) {
+        if (err = uc_mem_map(astro->uc, shdr.sh_addr, length_rounded, perms)) {
             fprintf(stderr, "uc_mem_map section %s: %s\n", section_name,
                     uc_strerror(err));
             goto failure;
@@ -112,21 +113,23 @@ int load_sections(uc_engine *uc, Elf *elf) {
             for (uint64_t addr = shdr.sh_addr;
                  addr < shdr.sh_addr + length_rounded;
                  addr += 0x1000) {
-                if (err = uc_mem_write(uc, addr, four_kb_of_zeros, 0x1000)) {
+                if (err = uc_mem_write(astro->uc, addr, four_kb_of_zeros,
+                                       0x1000)) {
                     fprintf(stderr, "uc_mem_write %s: %s\n", section_name,
                             uc_strerror(err));
                     goto failure;
                 }
             }
         } else {
-            if (err = uc_mem_write(uc, shdr.sh_addr, data->d_buf, shdr.sh_size)) {
+            if (err = uc_mem_write(astro->uc, shdr.sh_addr, data->d_buf,
+                                   shdr.sh_size)) {
                 fprintf(stderr, "uc_mem_write %s: %s\n", section_name,
                         uc_strerror(err));
                 goto failure;
             }
 
             if (shdr.sh_size < length_rounded) {
-                if (err = uc_mem_write(uc, shdr.sh_addr + shdr.sh_size,
+                if (err = uc_mem_write(astro->uc, shdr.sh_addr + shdr.sh_size,
                                        four_kb_of_uninit,
                                        length_rounded - shdr.sh_size)) {
                     fprintf(stderr, "uc_mem_write zero padding for %s: %s\n",
@@ -143,13 +146,13 @@ int load_sections(uc_engine *uc, Elf *elf) {
     return 0;
 }
 
-int get_symbol_addr(Elf *elf, const char *needle_name, uint64_t *addr_out) {
+int get_symbol_addr(astro_t *astro, const char *needle_name, uint64_t *addr_out) {
     // the section number of the ELF string section
     size_t shdrstrndx;
 
     // Grab the section index of the section header string table. This
     // is NOT the string table, so we know to skip it
-    if (elf_getshdrstrndx(elf, &shdrstrndx)) {
+    if (elf_getshdrstrndx(astro->elf, &shdrstrndx)) {
         fprintf(stderr, "elf_getshdrstrndx: %s\n", elf_errmsg(-1));
         goto failure;
     }
@@ -159,7 +162,7 @@ int get_symbol_addr(Elf *elf, const char *needle_name, uint64_t *addr_out) {
     size_t strtab_idx;
 
     // Look for a string table section
-    while (scn = elf_nextscn(elf, scn)) {
+    while (scn = elf_nextscn(astro->elf, scn)) {
         GElf_Shdr shdr;
         if (!gelf_getshdr(scn, &shdr)) {
             fprintf(stderr, "gelf_getshdr: %s\n", elf_errmsg(-1));
@@ -182,7 +185,7 @@ int get_symbol_addr(Elf *elf, const char *needle_name, uint64_t *addr_out) {
     scn = NULL;
 
     // Look for a symbol table section
-    while (scn = elf_nextscn(elf, scn)) {
+    while (scn = elf_nextscn(astro->elf, scn)) {
         GElf_Shdr shdr;
         if (!gelf_getshdr(scn, &shdr)) {
             fprintf(stderr, "gelf_getshdr: %s\n", elf_errmsg(-1));
@@ -209,7 +212,8 @@ int get_symbol_addr(Elf *elf, const char *needle_name, uint64_t *addr_out) {
                 goto failure;
             }
 
-            const char *symb_name = elf_strptr(elf, strtab_idx, sym.st_name);
+            const char *symb_name = elf_strptr(astro->elf, strtab_idx,
+                                               sym.st_name);
             if (!symb_name) {
                 fprintf(stderr, "elf_strptr: %s\n", elf_errmsg(-1));
                 goto failure;
