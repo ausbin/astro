@@ -1,6 +1,14 @@
 // Memory management
 
+#include <string.h>
 #include "defs.h"
+
+const char four_kb_of_zeros[0x1000];
+char four_kb_of_uninit[0x1000];
+
+extern void mem_uninit_init(void) {
+    memset(four_kb_of_uninit, UNINIT_BYTE, 0x1000);
+}
 
 static int grow_stack(mem_ctx_t *ctx, uc_engine *uc, bool unregister);
 
@@ -30,7 +38,7 @@ static int grow_stack(mem_ctx_t *ctx, uc_engine *uc, bool unregister) {
         fprintf(stderr, "uc_mem_map stack: %s\n", uc_strerror(err));
         goto failure;
     }
-    if (err = uc_mem_write(uc, ctx->stack_start, four_kb_of_zeros, 0x1000)) {
+    if (err = uc_mem_write(uc, ctx->stack_start, four_kb_of_uninit, 0x1000)) {
         fprintf(stderr, "uc_mem_write stack: %s\n", uc_strerror(err));
         goto failure;
     }
@@ -66,6 +74,14 @@ static int mem_ctx_grow_heap(uc_engine *uc, mem_ctx_t *ctx,
     if (err = uc_mem_map(uc, ctx->heap_end, size_rounded, UC_PROT_READ | UC_PROT_WRITE)) {
         fprintf(stderr, "uc_mem_map heap space: %s\n", uc_strerror(err));
         goto failure;
+    }
+
+    // Initialize memory
+    for (uint64_t a = ctx->heap_end; a < ctx->heap_end + size_rounded; a += 0x1000) {
+        if (err = uc_mem_write(uc, a, four_kb_of_uninit, 0x1000)) {
+            fprintf(stderr, "uc_mem_write initialize heap space: %s\n", uc_strerror(err));
+            goto failure;
+        }
     }
 
     new_block = malloc(sizeof (heap_block_t));

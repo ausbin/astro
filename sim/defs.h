@@ -11,7 +11,6 @@
 #define FP2VOID(fp_var) (*((void **) &(fp_var)))
 
 // astro.c
-extern const char four_kb_of_zeros[0x1000];
 
 // elf.c
 extern int open_elf(const char *filename, FILE **fp_out, Elf **elf_out);
@@ -21,6 +20,11 @@ extern int get_symbol_addr(Elf *elf, const char *needle_name, uint64_t *addr_out
 
 // mem.c
 #define ROUND_TO_4K(size) (((size) + 0xfff) & ~0xfff)
+
+// What to fill "uninitialized" memory with
+// Why not zero? Student code should break if they assume memory is
+// zeroed
+#define UNINIT_BYTE 0x69
 
 // (exclusive) high end of stack
 #define STACK_HIGH 0x800000000000
@@ -49,8 +53,13 @@ typedef struct {
     heap_block_t *heap_blocks;
 } mem_ctx_t;
 
+// Set the four_kb_of_uninit array (below) to all UNINIT_BYTE
+extern void mem_uninit_init(void);
 extern mem_ctx_t *mem_ctx_new(uc_engine *uc, Elf *elf);
 extern void mem_ctx_free(mem_ctx_t *ctx);
+
+extern const char four_kb_of_zeros[0x1000];
+extern char four_kb_of_uninit[0x1000];
 
 // function.c
 typedef void (*stub_impl_t)(uc_engine *uc, Elf *elf, void *user_data);

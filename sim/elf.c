@@ -115,7 +115,7 @@ int load_sections(uc_engine *uc, Elf *elf) {
 
             if (shdr.sh_size < length_rounded) {
                 if (err = uc_mem_write(uc, shdr.sh_addr + shdr.sh_size,
-                                       four_kb_of_zeros,
+                                       four_kb_of_uninit,
                                        length_rounded - shdr.sh_size)) {
                     fprintf(stderr, "uc_mem_write zero padding for %s: %s\n",
                             section_name, uc_strerror(err));

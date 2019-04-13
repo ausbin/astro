@@ -4,9 +4,6 @@
 #include <libelf.h>
 #include "defs.h"
 
-// Useful for zeroing out stuff
-const char four_kb_of_zeros[0x1000];
-
 static void stubby(uc_engine *uc, Elf *elf, void *user_data) {
     (void)user_data;
     (void)elf;
@@ -33,6 +30,10 @@ int main(void) {
         fprintf(stderr, "uc_open: %s\n", uc_strerror(err));
         goto failure;
     }
+
+    // Set 4K of uninitialized memory to 0x69s
+    // (reused to initialize memory deterministically)
+    mem_uninit_init();
 
     if (!load_sections(uc, elf))
         goto failure;
