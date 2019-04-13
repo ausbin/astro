@@ -15,7 +15,7 @@ static void stubby(uc_engine *uc, Elf *elf, void *user_data) {
     if (!stub_arg(uc, 0, &n))
         return;
 
-    printf("stubby called! n = %lu\n", n);
+    printf("stubby called! n = 0x%lx\n", n);
 }
 
 int main(void) {
@@ -24,7 +24,7 @@ int main(void) {
 
     FILE *binfp = NULL;
     Elf *elf = NULL;
-    mem_ctx *ctx = NULL;
+    mem_ctx_t *ctx = NULL;
 
     if (!open_elf("student.elf", &binfp, &elf))
         goto failure;

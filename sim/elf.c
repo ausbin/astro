@@ -88,7 +88,7 @@ int load_sections(uc_engine *uc, Elf *elf) {
             goto failure;
         }
 
-        uint64_t length_rounded = (shdr.sh_size + 0xFFF) & ~0xFFF;
+        uint64_t length_rounded = ROUND_TO_4K(shdr.sh_size);
 
         if (err = uc_mem_map(uc, shdr.sh_addr, length_rounded, perms)) {
             fprintf(stderr, "uc_mem_map section %s: %s\n", section_name,

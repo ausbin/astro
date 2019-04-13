@@ -2,7 +2,7 @@
 
 #include "defs.h"
 
-static int grow_stack(mem_ctx *ctx, uc_engine *uc, bool unregister);
+static int grow_stack(mem_ctx_t *ctx, uc_engine *uc, bool unregister);
 
 static bool mem_ctx_grow_stack_hook(uc_engine *uc, uc_mem_type type,
                                     uint64_t address, int size, int64_t value,
@@ -14,14 +14,14 @@ static bool mem_ctx_grow_stack_hook(uc_engine *uc, uc_mem_type type,
     (void)size;
     (void)value;
 
-    mem_ctx *ctx = user_data;
+    mem_ctx_t *ctx = user_data;
     if (!grow_stack(ctx, uc, false))
         return false;
 
     return true;
 }
 
-static int grow_stack(mem_ctx *ctx, uc_engine *uc, bool unregister) {
+static int grow_stack(mem_ctx_t *ctx, uc_engine *uc, bool unregister) {
     uc_err err;
 
     ctx->stack_start -= 0x1000;
@@ -56,8 +56,142 @@ static int grow_stack(mem_ctx *ctx, uc_engine *uc, bool unregister) {
     return 0;
 }
 
-mem_ctx *mem_ctx_new(uc_engine *uc, Elf *elf) {
-    mem_ctx *ctx = malloc(sizeof (mem_ctx));
+// sbrk(), basically
+static int mem_ctx_grow_heap(uc_engine *uc, mem_ctx_t *ctx,
+                             uint64_t size, heap_block_t **block_out) {
+    uc_err err;
+    heap_block_t *new_block = NULL;
+    uint64_t size_rounded = ROUND_TO_4K(size + 2*HEAP_BLOCK_PADDING);
+
+    if (err = uc_mem_map(uc, ctx->heap_end, size_rounded, UC_PROT_READ | UC_PROT_WRITE)) {
+        fprintf(stderr, "uc_mem_map heap space: %s\n", uc_strerror(err));
+        goto failure;
+    }
+
+    new_block = malloc(sizeof (heap_block_t));
+    if (!new_block) {
+        perror("malloc");
+        goto failure;
+    }
+
+    new_block->addr = ctx->heap_end;
+    new_block->size = size_rounded - 2*HEAP_BLOCK_PADDING;
+    new_block->alloced = 0;
+    new_block->next = NULL;
+
+    heap_block_t *tail = ctx->heap_blocks;
+    while (tail && tail->next)
+        tail = tail->next;
+    if (!tail)
+        ctx->heap_blocks = new_block;
+    else
+        tail->next = new_block;
+
+    ctx->heap_end += size_rounded;
+
+    *block_out = new_block;
+    return 1;
+
+    failure:
+    free(new_block);
+    return 0;
+}
+
+static int mem_ctx_malloc(uc_engine *uc, mem_ctx_t *ctx,
+                          uint64_t size, uint64_t *addr_out) {
+    heap_block_t *exact_match = NULL;
+    heap_block_t *split_match = NULL;
+
+    for (heap_block_t *b = ctx->heap_blocks;
+         b && !exact_match && !split_match;
+         b = b->next)
+        if (!b->alloced && b->size == size)
+            exact_match = b;
+        else if (!b->alloced && b->size >= size + 2*HEAP_BLOCK_PADDING + 1)
+            split_match = b;
+
+    // Need to map some more space
+    if (!exact_match && !split_match) {
+        heap_block_t *new_block;
+        if (!mem_ctx_grow_heap(uc, ctx, size, &new_block))
+            goto failure;
+
+        if (new_block->size == size)
+            exact_match = new_block;
+        else
+            split_match = new_block;
+    }
+
+    heap_block_t *result;
+    if (exact_match) {
+        result = exact_match;
+    } else {
+        // Need to perform a split
+        result = malloc(sizeof (heap_block_t));
+        if (!result) {
+            perror("malloc");
+            goto failure;
+        }
+
+        // Fix next pointers
+        result->next = split_match->next;
+        split_match->next = result;
+
+        // Fix sizes
+        result->size = size;
+        split_match->size -= 2*HEAP_BLOCK_PADDING + size;
+
+        // Fix start address
+        result->addr = split_match->addr + split_match->size + 2*HEAP_BLOCK_PADDING;
+    }
+
+    result->alloced = 1;
+    *addr_out = result->addr + HEAP_BLOCK_PADDING;
+
+    return 1;
+
+    failure:
+    *addr_out = 0;
+    return 0;
+}
+
+static void malloc_stub(uc_engine *uc, Elf *elf, void *user_data) {
+    (void)uc;
+    (void)elf;
+
+    mem_ctx_t *ctx = user_data;
+
+    uint64_t size;
+    if (!stub_arg(uc, 0, &size))
+        goto failure;
+
+    printf("malloc called with size = %lu\n", size);
+
+    uint64_t addr = 0;
+    if (!mem_ctx_malloc(uc, ctx, size, &addr))
+        goto failure;
+
+    if (!stub_ret(uc, addr))
+        goto failure;
+
+    return;
+
+    failure:
+    stub_die(uc);
+}
+
+static void free_stub(uc_engine *uc, Elf *elf, void *user_data) {
+    (void)uc;
+    (void)elf;
+
+    mem_ctx_t *ctx = user_data;
+    (void)ctx;
+
+    printf("free called\n");
+}
+
+mem_ctx_t *mem_ctx_new(uc_engine *uc, Elf *elf) {
+    mem_ctx_t *ctx = malloc(sizeof (mem_ctx_t));
     if (!ctx)
         goto failure;
 
@@ -76,6 +210,14 @@ mem_ctx *mem_ctx_new(uc_engine *uc, Elf *elf) {
 
     // now setup stack
     if (!grow_stack(ctx, uc, false))
+        goto failure;
+
+    ctx->heap_blocks = NULL;
+
+    // Setup malloc(), free() stubs
+    if (!stub_setup(uc, elf, ctx, "malloc", malloc_stub))
+        goto failure;
+    if (!stub_setup(uc, elf, ctx, "free", free_stub))
         goto failure;
 
     return ctx;

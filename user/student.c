@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include "stubs.h"
 
 int fib(int n) {
@@ -7,8 +8,12 @@ int fib(int n) {
     return fib(n - 1) + fib(n - 2);
 }
 
+void stupid(int n) {
+    uint64_t ret = (uint64_t) malloc(0x800 - 64);
+    stubby(ret);
+    if (n) stupid(n-1);
+}
+
 void asdf(void) {
-    for (int i = 0; i < 16; i++) {
-        stubby(i);
-    }
+    stupid(0x300);
 }

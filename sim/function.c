@@ -11,6 +11,9 @@ static struct stub {
     uc_hook hook;
 } stubs[MAX_STUBS];
 
+// Register used for return value
+#define ARG_REG_RET UC_X86_REG_RAX
+
 static const int ARG_REGS[] = {
     UC_X86_REG_RDI,
     UC_X86_REG_RSI,
@@ -120,6 +123,27 @@ int stub_arg(uc_engine *uc, size_t idx, uint64_t *arg_out) {
 
     failure:
     return 0;
+}
+
+int stub_ret(uc_engine *uc, uint64_t retval) {
+    uc_err err;
+    if (err = uc_reg_write(uc, ARG_REG_RET, &retval)) {
+        fprintf(stderr, "uc_reg_write return value: %s\n",
+                uc_strerror(err));
+        goto failure;
+    }
+
+    return 1;
+
+    failure:
+    return 0;
+}
+
+void stub_die(uc_engine *uc) {
+    uc_err err;
+    // No way to handle this error, but print it anyway
+    if (err = uc_emu_stop(uc))
+        fprintf(stderr, "uc_emu_stop: %s\n", uc_strerror(err));
 }
 
 int stub_setup(uc_engine *uc, Elf *elf, void *user_data, const char *name,
