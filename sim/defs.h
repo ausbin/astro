@@ -56,7 +56,7 @@ extern void mem_ctx_free(mem_ctx_t *ctx);
 typedef void (*stub_impl_t)(uc_engine *uc, Elf *elf, void *user_data);
 
 extern int call_function(uc_engine *uc, Elf *elf, uint64_t stack_bottom,
-                  uint64_t *ret, size_t n, const char *name, ...);
+                         uint64_t *ret, size_t n, const char *name, ...);
 extern int stub_setup(uc_engine *uc, Elf *elf, void *user_data, const char *name,
                       stub_impl_t impl);
 extern int stub_arg(uc_engine *uc, size_t idx, uint64_t *arg_out);
