@@ -12,6 +12,7 @@ void stupid(int n) {
     uint64_t ret = (uint64_t) malloc(0x800 - 64);
     stubby(ret);
     if (n) stupid(n-1);
+    free((void *) ret);
 }
 
 void asdf(void) {

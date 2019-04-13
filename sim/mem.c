@@ -97,8 +97,8 @@ static int mem_ctx_grow_heap(uc_engine *uc, mem_ctx_t *ctx,
     return 0;
 }
 
-static int mem_ctx_malloc(uc_engine *uc, mem_ctx_t *ctx,
-                          uint64_t size, uint64_t *addr_out) {
+static int mem_ctx_heap_malloc(uc_engine *uc, mem_ctx_t *ctx,
+                               uint64_t size, uint64_t *addr_out) {
     heap_block_t *exact_match = NULL;
     heap_block_t *split_match = NULL;
 
@@ -155,6 +155,52 @@ static int mem_ctx_malloc(uc_engine *uc, mem_ctx_t *ctx,
     return 0;
 }
 
+// merge right block into left
+static void mem_ctx_heap_merge(heap_block_t *left, heap_block_t *right) {
+    if (left && right && !left->alloced && !right->alloced &&
+            left->addr + 2*HEAP_BLOCK_PADDING + left->size == right->addr) {
+        left->size += 2*HEAP_BLOCK_PADDING + right->size;
+        left->next = right->next;
+        free(right);
+    }
+}
+
+static int mem_ctx_heap_free(mem_ctx_t *ctx, uint64_t addr) {
+    heap_block_t *prev = NULL;
+    heap_block_t *match = NULL;
+
+    for (heap_block_t *b = ctx->heap_blocks; !match && b; b = b->next) {
+        if (b->addr + HEAP_BLOCK_PADDING == addr) {
+            if (b->alloced) {
+                match = b;
+            } else {
+                // TODO: this error message is garbage
+                // TODO: not necessarily a double free
+                fprintf(stderr, "Double free() of address 0x%lx!\n", addr);
+                goto failure;
+            }
+        }
+
+        if (!match)
+            prev = b;
+    }
+
+    if (!match) {
+        // TODO: this error message is garbage
+        fprintf(stderr, "free()ing garbage pointer 0x%lx!\n", addr);
+        goto failure;
+    }
+
+    match->alloced = 0;
+    mem_ctx_heap_merge(match, match->next);
+    mem_ctx_heap_merge(prev, match);
+
+    return 1;
+
+    failure:
+    return 0;
+}
+
 static void malloc_stub(uc_engine *uc, Elf *elf, void *user_data) {
     (void)uc;
     (void)elf;
@@ -166,7 +212,7 @@ static void malloc_stub(uc_engine *uc, Elf *elf, void *user_data) {
         goto failure;
 
     uint64_t addr = 0;
-    if (!mem_ctx_malloc(uc, ctx, size, &addr))
+    if (!mem_ctx_heap_malloc(uc, ctx, size, &addr))
         goto failure;
 
     if (!stub_ret(uc, addr))
@@ -183,9 +229,18 @@ static void free_stub(uc_engine *uc, Elf *elf, void *user_data) {
     (void)elf;
 
     mem_ctx_t *ctx = user_data;
-    (void)ctx;
 
-    printf("free called\n");
+    uint64_t addr;
+    if (!stub_arg(uc, 0, &addr))
+        goto failure;
+
+    if (!mem_ctx_heap_free(ctx, addr))
+        goto failure;
+
+    return;
+
+    failure:
+    stub_die(uc);
 }
 
 mem_ctx_t *mem_ctx_new(uc_engine *uc, Elf *elf) {
