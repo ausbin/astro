@@ -15,5 +15,5 @@ void stupid(int n) {
 }
 
 void asdf(void) {
-    stupid(0x300);
+    stupid(64);
 }

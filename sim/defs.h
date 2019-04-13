@@ -49,7 +49,8 @@ typedef struct {
     heap_block_t *heap_blocks;
 } mem_ctx_t;
 
-mem_ctx_t *mem_ctx_new(uc_engine *uc, Elf *elf);
+extern mem_ctx_t *mem_ctx_new(uc_engine *uc, Elf *elf);
+extern void mem_ctx_free(mem_ctx_t *ctx);
 
 // function.c
 typedef void (*stub_impl_t)(uc_engine *uc, Elf *elf, void *user_data);

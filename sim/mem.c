@@ -165,8 +165,6 @@ static void malloc_stub(uc_engine *uc, Elf *elf, void *user_data) {
     if (!stub_arg(uc, 0, &size))
         goto failure;
 
-    printf("malloc called with size = %lu\n", size);
-
     uint64_t addr = 0;
     if (!mem_ctx_malloc(uc, ctx, size, &addr))
         goto failure;
@@ -225,4 +223,19 @@ mem_ctx_t *mem_ctx_new(uc_engine *uc, Elf *elf) {
     failure:
     free(ctx);
     return NULL;
+}
+
+void mem_ctx_free(mem_ctx_t *ctx) {
+    if (!ctx)
+        return;
+
+    // free linked list of heap blocks
+    heap_block_t *b = ctx->heap_blocks;
+    while (b) {
+        heap_block_t *next = b->next;
+        free(b);
+        b = next;
+    }
+
+    free(ctx);
 }

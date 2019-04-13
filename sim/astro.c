@@ -24,7 +24,7 @@ int main(void) {
 
     FILE *binfp = NULL;
     Elf *elf = NULL;
-    mem_ctx_t *ctx = NULL;
+    mem_ctx_t *mem_ctx = NULL;
 
     if (!open_elf("student.elf", &binfp, &elf))
         goto failure;
@@ -37,8 +37,8 @@ int main(void) {
     if (!load_sections(uc, elf))
         goto failure;
 
-    ctx = mem_ctx_new(uc, elf);
-    if (!ctx)
+    mem_ctx = mem_ctx_new(uc, elf);
+    if (!mem_ctx)
         goto failure;
 
     if (!stub_setup(uc, elf, NULL, "stubby", stubby))
@@ -46,7 +46,7 @@ int main(void) {
 
     for (uint64_t i = 0; i <= 20; i++) {
         uint64_t ret;
-        if (!call_function(uc, elf, ctx->stack_end, &ret, 1,
+        if (!call_function(uc, elf, mem_ctx->stack_end, &ret, 1,
                            "fib", i))
             goto failure;
 
@@ -54,10 +54,10 @@ int main(void) {
     }
 
     printf("\nnow testing stub...\n");
-    if (!call_function(uc, elf, ctx->stack_end, NULL, 0, "asdf"))
+    if (!call_function(uc, elf, mem_ctx->stack_end, NULL, 0, "asdf"))
         goto failure;
 
-    free(ctx);
+    mem_ctx_free(mem_ctx);
     elf_end(elf);
     fclose(binfp);
     uc_close(uc);
@@ -65,7 +65,7 @@ int main(void) {
     return 0;
 
     failure:
-    free(ctx);
+    if (mem_ctx) mem_ctx_free(mem_ctx);
     if (elf) elf_end(elf);
     if (binfp) fclose(binfp);
     uc_close(uc);
