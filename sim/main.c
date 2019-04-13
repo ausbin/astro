@@ -13,6 +13,13 @@ static void stubby(astro_t *astro, void *user_data) {
     printf("stubby called! n = 0x%lx\n", n);
 }
 
+static void backtrace(astro_t *astro, void *user_data) {
+    (void)astro;
+    (void)user_data;
+
+    printf("time to backtrace boys!\n");
+}
+
 int main(void) {
     astro_t *astro = astro_new("student.elf");
 
@@ -20,6 +27,9 @@ int main(void) {
         goto failure;
 
     if (!stub_setup(astro, NULL, "stubby", stubby))
+        goto failure;
+
+    if (!stub_setup(astro, NULL, "backtrace", backtrace))
         goto failure;
 
     for (uint64_t i = 0; i <= 20; i++) {
