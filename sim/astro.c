@@ -1,7 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unicorn/unicorn.h>
-#include <libelf.h>
 #include "defs.h"
 
 static void stubby(uc_engine *uc, Elf *elf, void *user_data) {
@@ -21,9 +19,10 @@ int main(void) {
 
     FILE *binfp = NULL;
     Elf *elf = NULL;
+    Dwarf *dwarf = NULL;
     mem_ctx_t *mem_ctx = NULL;
 
-    if (!open_elf("student.elf", &binfp, &elf))
+    if (!open_elf("student.elf", &binfp, &elf, &dwarf))
         goto failure;
 
     if (err = uc_open(UC_ARCH_X86, UC_MODE_64, &uc)) {
@@ -59,6 +58,7 @@ int main(void) {
         goto failure;
 
     mem_ctx_free(mem_ctx);
+    dwarf_end(dwarf);
     elf_end(elf);
     fclose(binfp);
     uc_close(uc);
@@ -67,6 +67,7 @@ int main(void) {
 
     failure:
     if (mem_ctx) mem_ctx_free(mem_ctx);
+    if (dwarf) dwarf_end(dwarf);
     if (elf) elf_end(elf);
     if (binfp) fclose(binfp);
     uc_close(uc);

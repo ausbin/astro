@@ -2,10 +2,12 @@
 #include <string.h>
 #include <unicorn/unicorn.h>
 #include <libelf.h>
+#include <elfutils/libdw.h>
 #include <gelf.h>
 #include "defs.h"
 
-int open_elf(const char *filename, FILE **fp_out, Elf **elf_out) {
+int open_elf(const char *filename, FILE **fp_out, Elf **elf_out,
+             Dwarf **dwarf_out) {
     FILE *binfp = fopen(filename, "r");
     if (!binfp) {
         perror("fopen");
@@ -23,8 +25,18 @@ int open_elf(const char *filename, FILE **fp_out, Elf **elf_out) {
         return 0;
     }
 
+    Dwarf *dwarf = dwarf_begin_elf(elf, DWARF_C_READ, NULL);
+
+    if (!elf) {
+        fprintf(stderr, "dwarf_begin_elf: %s\n", dwarf_errmsg(-1));
+        elf_end(elf);
+        fclose(binfp);
+        return 0;
+    }
+
     *fp_out = binfp;
     *elf_out = elf;
+    *dwarf_out = dwarf;
 
     return 1;
 }

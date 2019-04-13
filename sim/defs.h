@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <unicorn/unicorn.h>
 #include <libelf.h>
+#include <elfutils/libdw.h>
 
 // Revolting hack to convert a function pointer variable to a void
 // pointer. This violates C99 but Unicorn requires it, please don't
@@ -13,10 +14,12 @@
 // astro.c
 
 // elf.c
-extern int open_elf(const char *filename, FILE **fp_out, Elf **elf_out);
+extern int open_elf(const char *filename, FILE **fp_out, Elf **elf_out,
+                    Dwarf **dwarf_out);
 extern int get_entry_point_addr(Elf *elf, uint64_t *addr_out);
 extern int load_sections(uc_engine *uc, Elf *elf);
-extern int get_symbol_addr(Elf *elf, const char *needle_name, uint64_t *addr_out);
+extern int get_symbol_addr(Elf *elf, const char *needle_name,
+                           uint64_t *addr_out);
 
 // mem.c
 #define ROUND_TO_4K(size) (((size) + 0xfff) & ~0xfff)

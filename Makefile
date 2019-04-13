@@ -12,7 +12,7 @@ USER_SFILES = $(wildcard user/*.S)
 USER_OFILES = $(patsubst %.c,%.o,$(USER_CFILES)) $(patsubst %.S,%.o,$(USER_SFILES))
 
 SIM_CFLAGS = $(CFLAGS) -pthread -std=gnu99
-SIM_LIBS = $(shell pkg-config --libs unicorn libelf)
+SIM_LIBS = $(shell pkg-config --libs unicorn libelf libdw)
 SIM_CFILES = $(wildcard sim/*.c)
 SIM_OFILES = $(patsubst %.c,%.o,$(SIM_CFILES))
 
