@@ -97,6 +97,103 @@ int call_function(astro_t *astro, uint64_t *ret, size_t n,
     return 0;
 }
 
+int print_backtrace(astro_t *astro) {
+    uc_err err;
+
+    // call_function() above pushes the ELF entry point onto the stack
+    // before starting the simulator, since there's only a hlt at that
+    // address (halting the simulator). We don't need to include that in
+    // the backtrace (should be "magic" to students). So grab the entry
+    // point from the ELF header, and stop printing when we hit it
+    uint64_t final_return_addr;
+    if (!get_entry_point_addr(astro, &final_return_addr))
+        goto failure;
+
+    uint64_t base_pointer;
+
+    if (err = uc_reg_read(astro->uc, UC_X86_REG_RBP, &base_pointer)) {
+        fprintf(stderr, "uc_reg_read %%rbp for backtrace: %s\n", uc_strerror(err));
+        goto failure;
+    }
+
+    uint64_t stack_top_ptr;
+
+    if (err = uc_reg_read(astro->uc, UC_X86_REG_RSP, &stack_top_ptr)) {
+        fprintf(stderr, "uc_reg_read %%rsp for backtrace: %s\n", uc_strerror(err));
+        goto failure;
+    }
+
+    uint64_t return_addr;
+
+    // Read return address off stack (currently the top of the stack,
+    // since stubs don't touch it)
+    if (err = uc_mem_read(astro->uc, stack_top_ptr, &return_addr, 8)) {
+        fprintf(stderr, "uc_mem_read address 0x%lx (%%rbp + 8) for "
+                "backtrace: %s\n", stack_top_ptr, uc_strerror(err));
+        goto failure;
+    }
+
+    printf("backtrace:\n");
+
+    // TODO: give up after n iterations (for infinite loops)
+    // call_function() above sets %rbp = 0 and pushes the ELF entry
+    // point onto the stack when calling a function
+    while (return_addr != final_return_addr && base_pointer) {
+        uint64_t prev_instruction_addr = return_addr - 1;
+
+        // Find the Compilation Unit Debugging Information Entry (CU
+        // DIE) corresponding to this address
+        Dwarf_Die cu_die;
+        if (!dwarf_addrdie(astro->dwarf, prev_instruction_addr, &cu_die)) {
+            fprintf(stderr, "dwarf_addrdie for address 0x%lx for "
+                    "backtrace: %s\n", return_addr, dwarf_errmsg(-1));
+            goto failure;
+        }
+
+        // Find the line for this address
+        Dwarf_Line *line;
+        if (!(line = dwarf_getsrc_die(&cu_die, prev_instruction_addr))) {
+            fprintf(stderr, "dwarf_getsrc_die for address 0x%lx for "
+                    "backtrace: %s\n", return_addr, dwarf_errmsg(-1));
+            goto failure;
+        }
+
+        const char *filename;
+        if (!(filename = dwarf_linesrc(line, NULL, NULL))) {
+            fprintf(stderr, "dwarf_linesrc for address 0x%lx for "
+                    "backtrace: %s\n", return_addr, dwarf_errmsg(-1));
+            goto failure;
+        }
+
+        int lineno;
+        dwarf_lineno(line, &lineno);
+
+        printf("  %s:%d\n", filename, lineno);
+
+        // Now: go to the next stack frame.
+        // Saved %eip was pushed onto stack right before saved %ebp was
+        uint64_t return_addr_ptr = base_pointer + 8;
+
+        // Read return address off stack (pushed right before saved %rbp)
+        if (err = uc_mem_read(astro->uc, return_addr_ptr, &return_addr, 8)) {
+            fprintf(stderr, "uc_mem_read address 0x%lx (%%rbp + 8) for "
+                    "backtrace: %s\n", return_addr_ptr, uc_strerror(err));
+            goto failure;
+        }
+
+        if (err = uc_mem_read(astro->uc, base_pointer, &base_pointer, 8)) {
+            fprintf(stderr, "uc_mem_read address 0x%lx (%%rbp) for "
+                    "backtrace: %s\n", base_pointer, uc_strerror(err));
+            goto failure;
+        }
+    }
+
+    return 1;
+
+    failure:
+    return 0;
+}
+
 static void stub_hook_callback(uc_engine *uc, uint64_t addr, uint32_t size,
                                void *user_data) {
     (void)uc;

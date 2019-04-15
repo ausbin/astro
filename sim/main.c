@@ -8,9 +8,14 @@ static void stubby(astro_t *astro, void *user_data) {
 
     uint64_t n;
     if (!stub_arg(astro, 0, &n))
-        return;
+        goto failure;
 
     printf("stubby called! n = 0x%lx\n", n);
+
+    return;
+
+    failure:
+    stub_die(astro);
 }
 
 static void backtrace(astro_t *astro, void *user_data) {
@@ -18,6 +23,14 @@ static void backtrace(astro_t *astro, void *user_data) {
     (void)user_data;
 
     printf("time to backtrace boys!\n");
+
+    if (!print_backtrace(astro))
+        goto failure;
+
+    return;
+
+    failure:
+    stub_die(astro);
 }
 
 int main(void) {

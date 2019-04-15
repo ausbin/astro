@@ -81,6 +81,7 @@ typedef void (*stub_impl_t)(astro_t *astro, void *user_data);
 
 extern int call_function(astro_t *astro, uint64_t *ret, size_t n,
                          const char *name, ...);
+extern int print_backtrace(astro_t *astro);
 extern int stub_setup(astro_t *astro, void *user_data, const char *name,
                       stub_impl_t impl);
 extern int stub_arg(astro_t *astro, size_t idx, uint64_t *arg_out);
