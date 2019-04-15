@@ -175,12 +175,13 @@ static int _print_backtrace(astro_t *astro, enum stack_state stack_state) {
             goto failure;
         }
 
-        Dwarf_Die *scopes;
+        Dwarf_Die *scopes = NULL;
         int nscopes = dwarf_getscopes(&cu_die, prev_instr_addr, &scopes);
         if (nscopes <= 0) {
             fprintf(stderr, "dwarf_getscopes for address 0x%lx: %s\n",
                     prev_instr_addr,
                     (nscopes == 0)? "no scopes found!" : dwarf_errmsg(-1));
+            free(scopes);
             goto failure;
         }
 
@@ -192,10 +193,13 @@ static int _print_backtrace(astro_t *astro, enum stack_state stack_state) {
 
                 if (!function_name) {
                     fprintf(stderr, "dwarf_diename: %s\n", dwarf_errmsg(-1));
+                    free(scopes);
                     goto failure;
                 }
             }
         }
+
+        free(scopes);
 
         if (!function_name) {
             fprintf(stderr, "can't find function name for 0x%lx\n", prev_instr_addr);
