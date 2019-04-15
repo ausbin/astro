@@ -10,27 +10,7 @@ static void mem_uninit_init(void) {
     memset(four_kb_of_uninit, UNINIT_BYTE, 0x1000);
 }
 
-static int grow_stack(astro_t *astro, bool unregister);
-
-static bool mem_ctx_grow_stack_hook(uc_engine *uc, uc_mem_type type,
-                                    uint64_t address, int size, int64_t value,
-                                    void *user_data) {
-    // Don't need these guys since this hook is only called when we need
-    // to grow the stack 4K into lower memory
-    (void)uc;
-    (void)type;
-    (void)address;
-    (void)size;
-    (void)value;
-
-    astro_t *astro = user_data;
-    if (!grow_stack(astro, false))
-        return false;
-
-    return true;
-}
-
-static int grow_stack(astro_t *astro, bool unregister) {
+int grow_stack(astro_t *astro) {
     uc_err err;
 
     astro->mem_ctx.stack_start -= 0x1000;
@@ -46,27 +26,21 @@ static int grow_stack(astro_t *astro, bool unregister) {
         goto failure;
     }
 
-    if (unregister && (err = uc_hook_del(astro->uc,
-                                         astro->mem_ctx.stack_hook))) {
-        fprintf(stderr, "uc_hook_del stack hook: %s\n", uc_strerror(err));
-        goto failure;
-    }
-
-    uc_cb_eventmem_t hook_cb = mem_ctx_grow_stack_hook;
-
-    if (err = uc_hook_add(astro->uc, &astro->mem_ctx.stack_hook,
-                          UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED,
-                          FP2VOID(hook_cb), astro,
-                          astro->mem_ctx.stack_start - 0x1000,
-                          astro->mem_ctx.stack_start - 1)) {
-        fprintf(stderr, "uc_hook_add: %s\n", uc_strerror(err));
-        goto failure;
-    }
-
     return 1;
 
     failure:
     return 0;
+}
+
+// Called by the segfault handler so as not to throw unnecessary
+// segfaults for stack growth
+int is_access_within_stack_growth_region(astro_t *astro, uint64_t addr,
+                                         uint64_t size) {
+    uint64_t end_addr = addr + size - 1;
+    return addr >= astro->mem_ctx.stack_start - 0x1000 &&
+           addr <= astro->mem_ctx.stack_start - 1 &&
+           end_addr >= astro->mem_ctx.stack_start - 0x1000 &&
+           end_addr <= astro->mem_ctx.stack_start - 1;
 }
 
 // sbrk(), basically
@@ -284,7 +258,7 @@ int mem_ctx_setup(astro_t *astro) {
     astro->mem_ctx.stack_start = STACK_HIGH;
 
     // now setup stack
-    if (!grow_stack(astro, false))
+    if (!grow_stack(astro))
         goto failure;
 
     astro->mem_ctx.heap_blocks = NULL;

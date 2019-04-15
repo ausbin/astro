@@ -72,6 +72,9 @@ extern int get_symbol_addr(astro_t *astro, const char *needle_name,
 
 extern int mem_ctx_setup(astro_t *astro);
 extern void mem_ctx_cleanup(astro_t *astro);
+extern int is_access_within_stack_growth_region(astro_t *astro, uint64_t addr,
+                                                uint64_t size);
+extern int grow_stack(astro_t *astro);
 
 extern const char four_kb_of_zeros[0x1000];
 extern char four_kb_of_uninit[0x1000];
@@ -82,6 +85,7 @@ typedef void (*stub_impl_t)(astro_t *astro, void *user_data);
 extern int call_function(astro_t *astro, uint64_t *ret, size_t n,
                          const char *name, ...);
 extern int print_backtrace(astro_t *astro);
+extern int stub_print_backtrace(astro_t *astro);
 extern int stub_setup(astro_t *astro, void *user_data, const char *name,
                       stub_impl_t impl);
 extern int stub_arg(astro_t *astro, size_t idx, uint64_t *arg_out);

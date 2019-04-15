@@ -2,6 +2,26 @@
 #include <stdlib.h>
 #include "defs.h"
 
+static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
+                            int size, int64_t value, void *user_data) {
+    (void)uc;
+    (void)type;
+    (void)size;
+    (void)value;
+
+    astro_t *astro = user_data;
+
+    if (is_access_within_stack_growth_region(astro, address, size)) {
+        grow_stack(astro);
+        return true;
+    } else {
+        fprintf(stderr, "Segmentation Fault\n");
+        fprintf(stderr, "  attempted to access invalid address 0x%lx\n\n", address);
+        print_backtrace(astro);
+        return false;
+    }
+}
+
 astro_t *astro_new(const char *elf_filename) {
     uc_err err;
 
@@ -16,6 +36,15 @@ astro_t *astro_new(const char *elf_filename) {
 
     if (err = uc_open(UC_ARCH_X86, UC_MODE_64, &astro->uc)) {
         fprintf(stderr, "uc_open: %s\n", uc_strerror(err));
+        goto failure;
+    }
+
+    uc_cb_eventmem_t segfault_cb = handle_segfault;
+    uc_hook hh;
+    if (err = uc_hook_add(astro->uc, &hh, UC_HOOK_MEM_INVALID,
+                          FP2VOID(segfault_cb), astro,
+                          0x0000000000000000UL, 0xffffffffffffffffUL)) {
+        fprintf(stderr, "uc_hook_add segfault handler: %s\n", uc_strerror(err));
         goto failure;
     }
 

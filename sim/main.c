@@ -24,7 +24,7 @@ static void backtrace(astro_t *astro, void *user_data) {
 
     printf("time to backtrace boys!\n");
 
-    if (!print_backtrace(astro))
+    if (!stub_print_backtrace(astro))
         goto failure;
 
     return;
