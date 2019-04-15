@@ -164,20 +164,47 @@ static int _print_backtrace(astro_t *astro, enum stack_state stack_state) {
         // Back up into the last instruction: we want the instruction
         // that made the function call, not the return address
         // TODO: does this always work?
-        uint64_t prev_instruction_addr = return_addr - 1;
+        uint64_t prev_instr_addr = return_addr - 1;
 
         // Find the Compilation Unit Debugging Information Entry (CU
         // DIE) corresponding to this address
         Dwarf_Die cu_die;
-        if (!dwarf_addrdie(astro->dwarf, prev_instruction_addr, &cu_die)) {
+        if (!dwarf_addrdie(astro->dwarf, prev_instr_addr, &cu_die)) {
             fprintf(stderr, "dwarf_addrdie for address 0x%lx for "
-                    "backtrace: %s\n", return_addr, dwarf_errmsg(-1));
+                    "backtrace: %s\n", prev_instr_addr, dwarf_errmsg(-1));
+            goto failure;
+        }
+
+        Dwarf_Die *scopes;
+        int nscopes = dwarf_getscopes(&cu_die, prev_instr_addr, &scopes);
+        if (nscopes <= 0) {
+            fprintf(stderr, "dwarf_getscopes for address 0x%lx: %s\n",
+                    prev_instr_addr,
+                    (nscopes == 0)? "no scopes found!" : dwarf_errmsg(-1));
+            goto failure;
+        }
+
+        // Search scopes for function to which this belongs
+        const char *function_name = NULL;
+        for (int i = 0; !function_name && i < nscopes; i++) {
+            if (dwarf_tag(&scopes[i]) == DW_TAG_subprogram) {
+                function_name = dwarf_diename(&scopes[i]);
+
+                if (!function_name) {
+                    fprintf(stderr, "dwarf_diename: %s\n", dwarf_errmsg(-1));
+                    goto failure;
+                }
+            }
+        }
+
+        if (!function_name) {
+            fprintf(stderr, "can't find function name for 0x%lx\n", prev_instr_addr);
             goto failure;
         }
 
         // Find the line for this address
         Dwarf_Line *line;
-        if (!(line = dwarf_getsrc_die(&cu_die, prev_instruction_addr))) {
+        if (!(line = dwarf_getsrc_die(&cu_die, prev_instr_addr))) {
             fprintf(stderr, "dwarf_getsrc_die for address 0x%lx for "
                     "backtrace: %s\n", return_addr, dwarf_errmsg(-1));
             goto failure;
@@ -193,7 +220,7 @@ static int _print_backtrace(astro_t *astro, enum stack_state stack_state) {
         int lineno;
         dwarf_lineno(line, &lineno);
 
-        fprintf(stderr, "  %s:%d\n", filename, lineno);
+        fprintf(stderr, "  %s() at %s:%d\n", function_name, filename, lineno);
 
         // Now: go to the next stack frame.
         // Saved %eip was pushed onto stack right before saved %ebp was

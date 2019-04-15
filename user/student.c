@@ -1,6 +1,11 @@
 #include <stdint.h>
 #include "stubs.h"
 
+static void magic_inline(void) {
+    __asm__("nop\n");
+    stubby(*(char *)0x32);
+}
+
 int fib(int n) {
     // TODO: try this using DP instead
     if (n == 0 || n == 1)
@@ -14,11 +19,13 @@ void stupid(int n) {
     if (n)
         stupid(n-1);
     else {
-        backtrace(); stubby(*(char *)NULL);
+        stubby(0x69);
+        magic_inline();
+        //backtrace();
     }
     free((void *) ret);
 }
 
 void asdf(void) {
-    stupid(1000);
+    stupid(10);
 }

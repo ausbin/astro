@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <unicorn/unicorn.h>
 #include <libelf.h>
+#include <dwarf.h>
 #include <elfutils/libdw.h>
 
 // Revolting hack to convert a function pointer variable to a void

@@ -6,7 +6,6 @@ static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
                             int size, int64_t value, void *user_data) {
     (void)uc;
     (void)type;
-    (void)size;
     (void)value;
 
     astro_t *astro = user_data;
