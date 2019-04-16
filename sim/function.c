@@ -80,7 +80,14 @@ int call_function(astro_t *astro, uint64_t *ret, size_t n,
     va_end(ap);
 
     if (err = uc_emu_start(astro->uc, func_addr, 0, 0, 0)) {
-        fprintf(stderr, "uc_emu_start %s(): %s\n", name, uc_strerror(err));
+        // Let the segfault handler take care of segfaults
+        if (err != UC_ERR_READ_UNMAPPED &&
+            err != UC_ERR_WRITE_UNMAPPED &&
+            err != UC_ERR_FETCH_UNMAPPED &&
+            err != UC_ERR_WRITE_PROT &&
+            err != UC_ERR_READ_PROT &&
+            err != UC_ERR_FETCH_PROT)
+            fprintf(stderr, "uc_emu_start %s(): %s\n", name, uc_strerror(err));
         goto failure;
     }
 
