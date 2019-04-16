@@ -7,6 +7,9 @@
 #include <dwarf.h>
 #include <elfutils/libdw.h>
 
+#define MIN_ADDR 0x0000000000000000UL
+#define MAX_ADDR 0xffffffffffffffffUL
+
 // Revolting hack to convert a function pointer variable to a void
 // pointer. This violates C99 but Unicorn requires it, please don't
 // hate.

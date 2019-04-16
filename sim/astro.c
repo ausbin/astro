@@ -2,6 +2,13 @@
 #include <stdlib.h>
 #include "defs.h"
 
+static void noop_code_hook(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {
+    (void)uc;
+    (void)address;
+    (void)size;
+    (void)user_data;
+}
+
 static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
                             int size, int64_t value, void *user_data) {
     (void)uc;
@@ -38,13 +45,24 @@ astro_t *astro_new(const char *elf_filename) {
         goto failure;
     }
 
-    uc_cb_eventmem_t segfault_cb = handle_segfault;
     uc_hook hh;
+
+    uc_cb_eventmem_t segfault_cb = handle_segfault;
     if (err = uc_hook_add(astro->uc, &hh, UC_HOOK_MEM_INVALID,
-                          FP2VOID(segfault_cb), astro,
-                          0x0000000000000000UL, 0xffffffffffffffffUL)) {
+                          FP2VOID(segfault_cb), astro, MIN_ADDR, MAX_ADDR)) {
         fprintf(stderr, "uc_hook_add segfault handler: %s\n", uc_strerror(err));
         goto failure;
+    }
+
+    // HACK: To get %rip set properly in the segfault handler, add a
+    //       code hook. For some reason this works:
+    //       https://github.com/unicorn-engine/unicorn/issues/534#issuecomment-241238875
+    //       This results in about a 2x runtime, which is kinda brutal
+    uc_cb_hookcode_t code_cb = noop_code_hook;
+    if (err = uc_hook_add(astro->uc, &hh, UC_HOOK_CODE,
+                          FP2VOID(code_cb), astro, MIN_ADDR, MAX_ADDR)) {
+        fprintf(stderr, "uc_hook_add hack segfault handler: %s\n", uc_strerror(err));
+        return false;
     }
 
     if (!load_sections(astro))
