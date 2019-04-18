@@ -12,7 +12,6 @@ static void noop_code_hook(uc_engine *uc, uint64_t address, uint32_t size, void 
 static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
                             int size, int64_t value, void *user_data) {
     (void)uc;
-    (void)type;
     (void)value;
 
     astro_t *astro = user_data;
@@ -21,8 +20,31 @@ static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
         grow_stack(astro);
         return true;
     } else {
-        fprintf(stderr, "Segmentation Fault\n");
-        fprintf(stderr, "  attempted to access invalid address 0x%lx\n\n", address);
+        const char *access_name;
+        switch (type) {
+            case UC_MEM_READ_UNMAPPED:
+            case UC_MEM_READ_PROT:
+                access_name = "read";
+                break;
+
+            case UC_MEM_WRITE_UNMAPPED:
+            case UC_MEM_WRITE_PROT:
+                access_name = "write";
+                break;
+
+            case UC_MEM_FETCH_UNMAPPED:
+            case UC_MEM_FETCH_PROT:
+                access_name = "jump";
+                break;
+
+            default:
+                // Should not be reachable
+                access_name = "access";
+        }
+
+        fprintf(stderr, "\nSegmentation Fault\n");
+        fprintf(stderr, "  invalid %s to address 0x%lx of size %d bytes\n\n",
+                access_name, address, size);
         print_backtrace(astro);
         return false;
     }

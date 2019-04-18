@@ -162,7 +162,7 @@ static int _print_backtrace(astro_t *astro, enum stack_state stack_state) {
         return_addr++;
     }
 
-    fprintf(stderr, "backtrace:\n");
+    fprintf(stderr, "  backtrace:\n");
 
     // TODO: give up after n iterations (for infinite loops)
     // call_function() above sets %rbp = 0 and pushes the ELF entry
@@ -231,7 +231,7 @@ static int _print_backtrace(astro_t *astro, enum stack_state stack_state) {
         int lineno;
         dwarf_lineno(line, &lineno);
 
-        fprintf(stderr, "  %s() at %s:%d\n", function_name, filename, lineno);
+        fprintf(stderr, "    %s() at %s:%d\n", function_name, filename, lineno);
 
         // Now: go to the next stack frame.
         // Saved %eip was pushed onto stack right before saved %ebp was
