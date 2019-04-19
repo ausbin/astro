@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "stubs.h"
 
-static void magic_inline(void) {
+static void kaboom(void) {
     __asm__("nop\n");
     stubby(*(char *)0x32);
 }
@@ -20,7 +20,7 @@ void stupid(int n) {
         stupid(n-1);
     else {
         stubby(0x69);
-        magic_inline();
+        kaboom();
         //backtrace();
     }
     free((void *) ret);

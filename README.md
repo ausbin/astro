@@ -1,18 +1,29 @@
 astro
 =====
 
-This is an x86-64 simulator designed to autograde C code safely.
+This is an x86-64 simulator designed to autograde C code safely and less
+bafflingly. Students should focus on learning C, not making sense of
+autograder output.
 
 Dependencies:
 
  - [Unicorn][1] for x86-64 simulation
  - [elfutils][2] for libelf, used to load the student [ELF][3] into the
-   simulator
+   simulator, and libdw, used to parse [DWARF][5] debug symbols in the
+   student ELF (for backtraces)
 
-How to use this prototype:
+To try out the sample assignment, first build the astro library. This
+statically links Unicorn and elfutils together with astro simulator code
+to produce `libastro.o`, which you can distribute with a homework (~4
+MiB isn't bad in 2019):
 
     $ make
-    $ ./astro
+
+Now, to try the example:
+
+    $ cd example
+    $ make
+    $ ./tester
 
 Why?
 ----
@@ -113,3 +124,4 @@ invalid pointer.
 [2]: https://sourceware.org/elfutils/
 [3]: https://en.wikipedia.org/wiki/Executable_and_Linkable_Format
 [4]: http://valgrind.org/
+[5]: http://dwarfstd.org/

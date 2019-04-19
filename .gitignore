@@ -1,4 +1,2 @@
-astro
 *.o
-*.asm
-*.elf
+/*.so

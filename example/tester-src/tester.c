@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "defs.h"
+#include "astro.h"
 
 static void stubby(astro_t *astro, void *user_data) {
     (void)astro;

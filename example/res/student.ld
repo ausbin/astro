@@ -1,6 +1,6 @@
 SECTIONS {
     . = 0x3000;
-    .text ALIGN(0x1000): { user/start.o(.text) *(.text) }
+    .text ALIGN(0x1000): { *(.text) }
 
     /* 4k guard */
     . += 0x1000;
