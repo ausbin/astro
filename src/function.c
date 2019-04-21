@@ -7,7 +7,7 @@ static struct stub {
     int valid;
     astro_t *astro;
     void *user_data;
-    stub_impl_t impl;
+    astro_stub_impl_t impl;
     uc_hook hook;
 } stubs[MAX_STUBS];
 
@@ -23,8 +23,8 @@ static const int ARG_REGS[] = {
     UC_X86_REG_R9,
 };
 
-int call_function(astro_t *astro, uint64_t *ret, size_t n,
-                  const char *name, ...) {
+int astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
+                        const char *name, ...) {
     uc_err err;
 
     if (n > sizeof ARG_REGS / sizeof *ARG_REGS) {
@@ -258,12 +258,12 @@ static int _print_backtrace(astro_t *astro, enum stack_state stack_state) {
 }
 
 // Use this when you want to print a backtrace in a stub
-int stub_print_backtrace(astro_t *astro) {
+int astro_stub_print_backtrace(astro_t *astro) {
     return _print_backtrace(astro, STACK_STATE_STUB);
 }
 
 // Use this when their code is executing and they screw up
-int print_backtrace(astro_t *astro) {
+int astro_print_backtrace(astro_t *astro) {
     return _print_backtrace(astro, STACK_STATE_ERROR);
 }
 
@@ -277,7 +277,7 @@ static void stub_hook_callback(uc_engine *uc, uint64_t addr, uint32_t size,
     stub->impl(stub->astro, stub->user_data);
 }
 
-int stub_arg(astro_t *astro, size_t idx, uint64_t *arg_out) {
+int astro_stub_arg(astro_t *astro, size_t idx, uint64_t *arg_out) {
     if (idx >= sizeof ARG_REGS / sizeof *ARG_REGS) {
         fprintf(stderr, "unsupported args index %lu\n", idx);
         goto failure;
@@ -296,7 +296,7 @@ int stub_arg(astro_t *astro, size_t idx, uint64_t *arg_out) {
     return 0;
 }
 
-int stub_ret(astro_t *astro, uint64_t retval) {
+int astro_stub_ret(astro_t *astro, uint64_t retval) {
     uc_err err;
     if (err = uc_reg_write(astro->uc, ARG_REG_RET, &retval)) {
         fprintf(stderr, "uc_reg_write return value: %s\n",
@@ -310,15 +310,15 @@ int stub_ret(astro_t *astro, uint64_t retval) {
     return 0;
 }
 
-void stub_die(astro_t *astro) {
+void astro_stub_die(astro_t *astro) {
     uc_err err;
     // No way to handle this error, but print it anyway
     if (err = uc_emu_stop(astro->uc))
         fprintf(stderr, "uc_emu_stop: %s\n", uc_strerror(err));
 }
 
-int stub_setup(astro_t *astro, void *user_data, const char *name,
-               stub_impl_t impl) {
+int astro_stub_setup(astro_t *astro, void *user_data, const char *name,
+                     astro_stub_impl_t impl) {
     uint64_t func_addr;
     if (!get_symbol_addr(astro, name, &func_addr)) {
         fprintf(stderr, "cannot find symbol `%s'\n", name);

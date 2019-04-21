@@ -206,27 +206,27 @@ static void malloc_stub(astro_t *astro, void *user_data) {
     (void)user_data;
 
     uint64_t size;
-    if (!stub_arg(astro, 0, &size))
+    if (!astro_stub_arg(astro, 0, &size))
         goto failure;
 
     uint64_t addr = 0;
     if (!mem_ctx_heap_malloc(astro, size, &addr))
         goto failure;
 
-    if (!stub_ret(astro, addr))
+    if (!astro_stub_ret(astro, addr))
         goto failure;
 
     return;
 
     failure:
-    stub_die(astro);
+    astro_stub_die(astro);
 }
 
 static void free_stub(astro_t *astro, void *user_data) {
     (void)user_data;
 
     uint64_t addr;
-    if (!stub_arg(astro, 0, &addr))
+    if (!astro_stub_arg(astro, 0, &addr))
         goto failure;
 
     if (!mem_ctx_heap_free(astro, addr))
@@ -235,7 +235,7 @@ static void free_stub(astro_t *astro, void *user_data) {
     return;
 
     failure:
-    stub_die(astro);
+    astro_stub_die(astro);
 }
 
 int mem_ctx_setup(astro_t *astro) {
@@ -264,9 +264,9 @@ int mem_ctx_setup(astro_t *astro) {
     astro->mem_ctx.heap_blocks = NULL;
 
     // Setup malloc(), free() stubs
-    if (!stub_setup(astro, NULL, "malloc", malloc_stub))
+    if (!astro_stub_setup(astro, NULL, "malloc", malloc_stub))
         goto failure;
-    if (!stub_setup(astro, NULL, "free", free_stub))
+    if (!astro_stub_setup(astro, NULL, "free", free_stub))
         goto failure;
 
     return 1;

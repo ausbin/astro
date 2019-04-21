@@ -45,7 +45,7 @@ static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
         fprintf(stderr, "\nSegmentation Fault\n");
         fprintf(stderr, "  invalid %s to address 0x%lx of size %d bytes\n\n",
                 access_name, address, size);
-        print_backtrace(astro);
+        astro_print_backtrace(astro);
         return false;
     }
 }
