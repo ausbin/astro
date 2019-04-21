@@ -1,22 +1,23 @@
 CC = gcc
+# Need to use -isystem here to ignore warnings in elfutils headers
 CFLAGS = -g -pedantic -Wall -Werror -Wextra \
          -Wno-parentheses -Wstrict-prototypes -Wold-style-definition \
-		 -pthread -std=gnu99 -fPIC -Iinclude
-HFILES = $(wildcard **/*.h)
-# TODO: include these as submodules for easier building
-LIBS = -l:libunicorn.a -l:libdw.a -l:libelf.a -l:libebl.a
+		 -pthread -std=gnu99 -fPIC -Iinclude \
+		 -isystem submods/install-path/include
+HFILES = $(wildcard include/*.h src/*.h)
+LIBS = -Llib -lunicorn -ldw -lelf
 CFILES = $(wildcard src/*.c)
 OFILES = $(patsubst %.c,%.o,$(CFILES))
 
 .PHONY: all clean
 
-all: libastro.so
+all: lib/libastro.so
 
-libastro.so: $(OFILES)
+lib/libastro.so: $(OFILES)
 	$(CC) -shared $(CFLAGS) $^ -o $@ $(LIBS)
 
 src/%.o: src/%.c $(HFILES)
 	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
-	rm -f *.so *.o src/*.o
+	rm -f lib/libastro.so *.o src/*.o

@@ -12,11 +12,10 @@ Dependencies:
    simulator, and libdw, used to parse [DWARF][5] debug symbols in the
    student ELF (for backtraces)
 
-To try out the sample assignment, first build the astro library. This
-statically links Unicorn and elfutils together with astro simulator code
-to produce `libastro.o`, which you can distribute with a homework (~4
-MiB isn't bad in 2019):
+To try out the sample assignment, first build the dependencies and the
+astro library with the following commands:
 
+    $ ./update-deps.sh
     $ make
 
 Now, to try the example:

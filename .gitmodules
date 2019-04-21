@@ -1,0 +1,6 @@
+[submodule "submods/unicorn"]
+	path = submods/unicorn
+	url = https://github.com/unicorn-engine/unicorn.git
+[submodule "submods/elfutils"]
+	path = submods/elfutils
+	url = git://sourceware.org/git/elfutils.git
