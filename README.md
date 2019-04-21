@@ -18,7 +18,9 @@ astro library with the following commands:
     $ ./update-deps.sh
     $ make
 
-Now, to try the example:
+Now `lib/` contains `libastro.so` as well as dependency libraries, so
+you can `cp -L` the whole directory wherever you need it. To try an
+example grader which links with astro, run:
 
     $ cd example
     $ make
