@@ -13,6 +13,6 @@ typedef struct {
 
 extern list_t *list_new(void);
 extern void list_free(list_t *list);
-extern int list_deep_copy(list_t *list, list_t **new_list_out);
+extern list_t *list_deep_copy(list_t *list);
 
 #endif

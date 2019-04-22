@@ -2,27 +2,8 @@
 #include <stdlib.h>
 #include "astro.h"
 
-static void stubby(astro_t *astro, void *user_data) {
-    (void)astro;
-    (void)user_data;
-
-    uint64_t n;
-    if (!astro_stub_arg(astro, 0, &n))
-        goto failure;
-
-    printf("stubby called! n = 0x%lx\n", n);
-
-    return;
-
-    failure:
-    astro_stub_die(astro);
-}
-
 static void backtrace(astro_t *astro, void *user_data) {
-    (void)astro;
     (void)user_data;
-
-    printf("time to backtrace boys!\n");
 
     if (!astro_stub_print_backtrace(astro))
         goto failure;
@@ -39,10 +20,7 @@ int main(void) {
     if (!astro)
         goto failure;
 
-    if (!astro_stub_setup(astro, NULL, "stubby", stubby))
-        goto failure;
-
-    if (!astro_stub_setup(astro, NULL, "backtrace", backtrace))
+    if (!astro_stub_setup(astro, NULL, "__backtrace", backtrace))
         goto failure;
 
     for (uint64_t i = 0; i <= 20; i++) {

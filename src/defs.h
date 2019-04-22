@@ -15,6 +15,8 @@
 // hate.
 #define FP2VOID(fp_var) (*((void **) &(fp_var)))
 
+#define MIN(a, b) ((a) < (b)? (a) : (b))
+
 // mem.c pt. 1
 typedef struct heap_block {
     // pointer to beginning of padding

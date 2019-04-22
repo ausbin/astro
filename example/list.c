@@ -1,16 +1,15 @@
-#include <stdio.h>
+#include <stdlib.h>
 #include "list.h"
 
-list_t *list_new(void) {
-    return NULL;
+list_t *list_new_good(void) {
+    return calloc(1, sizeof (list_t));
 }
 
 void list_free(list_t *list) {
     (void)list;
 }
 
-int list_deep_copy(list_t *list, list_t **new_list_out) {
+list_t *list_deep_copy(list_t *list) {
     (void)list;
-    (void)new_list_out;
-    return 0;
+    return NULL;
 }

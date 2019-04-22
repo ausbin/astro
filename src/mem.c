@@ -154,6 +154,26 @@ static int mem_ctx_heap_malloc(astro_t *astro, uint64_t size,
     return 0;
 }
 
+static void mem_ctx_heap_find_block(astro_t *astro, uint64_t addr,
+                                    heap_block_t **prev_out,
+                                    heap_block_t **match_out) {
+    heap_block_t *prev = NULL;
+    heap_block_t *match = NULL;
+
+    for (heap_block_t *b = astro->mem_ctx.heap_blocks;
+         !match && b;
+         b = b->next)
+        if (b->addr + HEAP_BLOCK_PADDING == addr)
+            match = b;
+        else
+            prev = b;
+
+    if (prev_out)
+        *prev_out = match? prev : NULL;
+    if (match_out)
+        *match_out = match;
+}
+
 // merge right block into left
 static void mem_ctx_heap_merge(heap_block_t *left, heap_block_t *right) {
     if (left && right && !left->alloced && !right->alloced &&
@@ -168,27 +188,18 @@ static int mem_ctx_heap_free(astro_t *astro, uint64_t addr) {
     heap_block_t *prev = NULL;
     heap_block_t *match = NULL;
 
-    for (heap_block_t *b = astro->mem_ctx.heap_blocks;
-         !match && b;
-         b = b->next) {
-        if (b->addr + HEAP_BLOCK_PADDING == addr) {
-            if (b->alloced) {
-                match = b;
-            } else {
-                // TODO: this error message is garbage
-                // TODO: not necessarily a double free
-                fprintf(stderr, "Double free() of address 0x%lx!\n", addr);
-                goto failure;
-            }
-        }
-
-        if (!match)
-            prev = b;
-    }
+    mem_ctx_heap_find_block(astro, addr, &prev, &match);
 
     if (!match) {
         // TODO: this error message is garbage
         fprintf(stderr, "free()ing garbage pointer 0x%lx!\n", addr);
+        goto failure;
+    }
+
+    if (!match->alloced) {
+        // TODO: this error message is garbage
+        // TODO: not necessarily a double free
+        fprintf(stderr, "Double free() of address 0x%lx!\n", addr);
         goto failure;
     }
 
@@ -199,6 +210,108 @@ static int mem_ctx_heap_free(astro_t *astro, uint64_t addr) {
     return 1;
 
     failure:
+    return 0;
+}
+
+// TODO: Will these error messages say malloc()? Is that too confusing?
+static int mem_ctx_heap_calloc(astro_t *astro, uint64_t nmemb, uint64_t size,
+                               uint64_t *addr_out) {
+    uc_err err;
+    uint64_t total_size = nmemb * size;
+
+    uint64_t addr = 0;
+    if (!mem_ctx_heap_malloc(astro, total_size, &addr))
+        goto failure;
+
+    // Zero out the block 4K at a time
+    for (uint64_t a = addr; a < addr + total_size; a += 0x1000) {
+        uint64_t n = MIN(addr + total_size - a, 0x1000);
+
+        if (err = uc_mem_write(astro->uc, a, four_kb_of_zeros, n)) {
+            fprintf(stderr, "uc_mem_write calloc: %s\n", uc_strerror(err));
+            goto failure;
+        }
+    }
+
+    *addr_out = addr;
+    return 1;
+
+    failure:
+    *addr_out = 0;
+    return 0;
+}
+
+// TODO: Will these error messages say malloc()/free()? Is that too confusing?
+static int mem_ctx_heap_realloc(astro_t *astro, uint64_t ptr, uint64_t size,
+                                uint64_t *addr_out) {
+    uc_err err;
+    heap_block_t *match = NULL;
+    uint64_t existing_size = 0;
+
+    if (ptr) {
+        mem_ctx_heap_find_block(astro, ptr, NULL, &match);
+
+        if (!match) {
+            // TODO: this error message is garbage
+            fprintf(stderr, "realloc()ing garbage pointer 0x%lx!\n", ptr);
+            goto failure;
+        }
+
+        if (!match->alloced) {
+            // TODO: this error message is semi garbage
+            fprintf(stderr, "realloc() called on free block 0x%lx! Do not "
+                            "free() a pointer before passing it to ralloc()!\n",
+                    ptr);
+            goto failure;
+        }
+
+        existing_size = match->size;
+    }
+
+    uint64_t addr;
+
+    // return NULL if size is 0
+    if (!size) {
+        addr = 0;
+    // Else provided they provided an existing pointer, we want to malloc the
+    // new size and copy contents over
+    } else if (ptr) {
+        if (!mem_ctx_heap_malloc(astro, size, &addr))
+            goto failure;
+
+        uint64_t copy_size = MIN(existing_size, size);
+        char *tmp_buf = malloc(MIN(0x1000, copy_size));
+
+        if (!tmp_buf) {
+            perror("malloc");
+            goto failure;
+        }
+
+        // Copy 4K at a time
+        for (uint64_t a = ptr; a < ptr + copy_size; a += 0x1000) {
+            uint64_t n = MIN(ptr + copy_size - a, 0x1000);
+
+            if (err = uc_mem_read(astro->uc, a, tmp_buf, n)) {
+                fprintf(stderr, "uc_mem_read realloc: %s\n", uc_strerror(err));
+                goto failure;
+            }
+
+            if (err = uc_mem_write(astro->uc, a, tmp_buf, n)) {
+                fprintf(stderr, "uc_mem_write realloc: %s\n", uc_strerror(err));
+                goto failure;
+            }
+        }
+    }
+
+    // If they passed an old block, free it now
+    if (ptr && !mem_ctx_heap_free(astro, ptr))
+        goto failure;
+
+    *addr_out = addr;
+    return 1;
+
+    failure:
+    *addr_out = 0;
     return 0;
 }
 
@@ -238,6 +351,52 @@ static void free_stub(astro_t *astro, void *user_data) {
     astro_stub_die(astro);
 }
 
+static void calloc_stub(astro_t *astro, void *user_data) {
+    (void)user_data;
+
+    uint64_t nmemb;
+    if (!astro_stub_arg(astro, 0, &nmemb))
+        goto failure;
+    uint64_t size;
+    if (!astro_stub_arg(astro, 1, &size))
+        goto failure;
+
+    uint64_t addr = 0;
+    if (!mem_ctx_heap_calloc(astro, nmemb, size, &addr))
+        goto failure;
+
+    if (!astro_stub_ret(astro, addr))
+        goto failure;
+
+    return;
+
+    failure:
+    astro_stub_die(astro);
+}
+
+static void realloc_stub(astro_t *astro, void *user_data) {
+    (void)user_data;
+
+    uint64_t ptr;
+    if (!astro_stub_arg(astro, 0, &ptr))
+        goto failure;
+    uint64_t size;
+    if (!astro_stub_arg(astro, 1, &size))
+        goto failure;
+
+    uint64_t addr = 0;
+    if (!mem_ctx_heap_realloc(astro, ptr, size, &addr))
+        goto failure;
+
+    if (!astro_stub_ret(astro, addr))
+        goto failure;
+
+    return;
+
+    failure:
+    astro_stub_die(astro);
+}
+
 int mem_ctx_setup(astro_t *astro) {
     // Set 4K of uninitialized memory to 0x69s
     // (reused to initialize memory deterministically)
@@ -263,11 +422,15 @@ int mem_ctx_setup(astro_t *astro) {
 
     astro->mem_ctx.heap_blocks = NULL;
 
-    // Setup malloc(), free() stubs
-    if (!astro_stub_setup(astro, NULL, "malloc", malloc_stub))
-        goto failure;
-    if (!astro_stub_setup(astro, NULL, "free", free_stub))
-        goto failure;
+    // Setup malloc(), calloc(), realloc(), free() stubs
+    #define SETUP_MALLOC_STUB(name) \
+        if (!astro_stub_setup(astro, NULL, #name, name ## _stub)) \
+            goto failure;
+
+    SETUP_MALLOC_STUB(malloc);
+    SETUP_MALLOC_STUB(free);
+    SETUP_MALLOC_STUB(calloc);
+    SETUP_MALLOC_STUB(realloc);
 
     return 1;
 
