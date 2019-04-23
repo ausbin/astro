@@ -13,9 +13,10 @@ all: student.elf tester
 ##
 ## Tester
 ##
-TESTER_CFLAGS = $(CFLAGS) -pthread -std=gnu99
-TESTER_HFILES = $(wildcard **/*.h)
+TESTER_INCLUDE_PATH = tester-src/include
 TESTER_LIBS_PATH = tester-src/lib
+TESTER_CFLAGS = $(CFLAGS) -pthread -std=gnu99 -isystem $(TESTER_INCLUDE_PATH)
+TESTER_HFILES = $(wildcard tester-src/*.h)
 TESTER_LIBS = -L$(TESTER_LIBS_PATH) -lastro
 TESTER_CFILES = $(wildcard tester-src/*.c)
 TESTER_OFILES = $(patsubst %.c,%.o,$(TESTER_CFILES))
