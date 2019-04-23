@@ -1,44 +1,41 @@
-#include <stdio.h>
 #include <stdlib.h>
-#include "astro.h"
+#include <stdio.h>
+#include <string.h>
+#include "tester.h"
 
-static void backtrace(astro_t *astro, void *user_data) {
-    (void)user_data;
-
-    if (!astro_stub_print_backtrace(astro))
-        goto failure;
-
-    return;
-
-    failure:
-    astro_stub_die(astro);
+tester_t *tester_new(void) {
+    tester_t *tester = calloc(1, sizeof (tester_t));
+    if (!tester) {
+        perror("calloc");
+        abort();
+    }
+    return tester;
 }
 
-int main(void) {
-    astro_t *astro = astro_new("student.elf");
+void tester_free(tester_t *tester) {
+    if (!tester)
+        return;
 
-    if (!astro)
-        goto failure;
+    free(tester->tests);
+    free(tester);
+}
 
-    if (!astro_stub_setup(astro, NULL, "__backtrace", backtrace))
-        goto failure;
+void tester_push(tester_t *tester, test_t *test) {
+    if (!tester || !test)
+        return;
 
-    for (uint64_t i = 0; i <= 20; i++) {
-        uint64_t ret;
-        if (!astro_call_function(astro, &ret, 1, "fib", i))
-            goto failure;
-
-        printf("fib(%lu): %lu\n", i, ret);
+    // Need to grow this boy
+    if (tester->tests_count == tester->tests_cap) {
+        tester->tests_cap *= TESTER_TESTS_GROWTH_FACTOR;
+        tester->tests = realloc(tester->tests,
+                                tester->tests_cap * sizeof (test_t));
+        // Oopsie daisy, did I just leak? Damn right I did!
+        if (!tester->tests) {
+            perror("realloc");
+            abort();
+        }
     }
 
-    printf("\nnow testing stub...\n");
-    if (!astro_call_function(astro, NULL, 0, "asdf"))
-        goto failure;
-
-    astro_free(astro);
-    return 0;
-
-    failure:
-    astro_free(astro);
-    return 1;
+    memcpy(&tester->tests[tester->tests_count], test, sizeof (test_t));
+    tester->tests_count++;
 }

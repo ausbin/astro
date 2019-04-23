@@ -9,5 +9,5 @@ STUB(calloc)
 STUB(realloc)
 STUB(free)
 
-// Defined inside the tester
+// Defined inside the example tester. Useful but not required
 STUB(__backtrace)
