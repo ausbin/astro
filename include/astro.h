@@ -2,6 +2,7 @@
 #define ASTRO_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 typedef struct astro astro_t;
 

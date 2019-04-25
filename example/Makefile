@@ -21,7 +21,7 @@ TESTER_LIBS = -L$(TESTER_LIBS_PATH) -lastro
 TESTER_CFILES = $(wildcard tester-src/*.c)
 TESTER_OFILES = $(patsubst %.c,%.o,$(TESTER_CFILES))
 
-tester-src/%.o: tester-src/%.c $(HFILES)
+tester-src/%.o: tester-src/%.c $(TESTER_HFILES)
 	$(CC) -c $(TESTER_CFLAGS) $< -o $@
 
 tester: $(TESTER_OFILES)
