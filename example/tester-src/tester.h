@@ -35,9 +35,18 @@ typedef struct {
 
 #define test_assert(cond, message) \
     if (!(cond)) { \
-        fprintf(stderr, "%s: FAIL: %s. Failing condition: %s\n\ttest description: %s\n", __test->name, message, #cond, __test->description); \
+        fprintf(stderr, "%s: FAIL. %s\n\tFailing condition: %s. %s\n", __test->name, __test->description, #cond, message); \
         return 0; \
     }
+
+// This is a gcc extension, "statement expressions"
+#define test_call(func_name, ...) ({ \
+    uint64_t ret; \
+    size_t n = sizeof (uint64_t[]){__VA_ARGS__} / sizeof (uint64_t); \
+    if (!astro_call_function(__astro, &ret, n, #func_name, ##__VA_ARGS__)) \
+        return 0; \
+    ret; \
+})
 
 #define tester_push(tester, test_name) \
     _tester_push(tester, &_ ## test_name)

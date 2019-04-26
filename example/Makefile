@@ -4,8 +4,7 @@
 CC = gcc
 LD = ld
 OBJDUMP = objdump
-CFLAGS = -g -pedantic -Wall -Werror -Wextra \
-         -Wstrict-prototypes -Wold-style-definition
+CFLAGS = -g -Wall -Werror -Wextra -Wstrict-prototypes -Wold-style-definition
 
 .PHONY: all
 all: student.elf tester
@@ -32,7 +31,7 @@ tester: $(TESTER_OFILES)
 ##
 # -fno-asynchronous-unwind-tables removes the annoying .eh_frame section
 # see: https://stackoverflow.com/a/26302715/321301
-USER_CFLAGS = $(CFLAGS) -fno-builtin -fno-asynchronous-unwind-tables -std=c99 -include res/stubs.h
+USER_CFLAGS = $(CFLAGS) -fno-builtin -fno-asynchronous-unwind-tables -pedantic -std=c99 -include res/stubs.h
 USER_CFILES = $(wildcard *.c)
 USER_SFILES = $(wildcard res/*.S)
 USER_OFILES = $(patsubst %.c,%.o,$(USER_CFILES)) $(patsubst %.S,%.o,$(USER_SFILES))
