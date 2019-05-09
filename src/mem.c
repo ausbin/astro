@@ -10,32 +10,34 @@ static void mem_uninit_init(void) {
     memset(four_kb_of_uninit, UNINIT_BYTE, 0x1000);
 }
 
-int grow_stack(astro_t *astro) {
+const astro_err_t *astro_grow_stack(astro_t *astro) {
+    const astro_err_t *astro_err = NULL;
     uc_err err;
 
     astro->mem_ctx.stack_start -= 0x1000;
 
     if (err = uc_mem_map(astro->uc, astro->mem_ctx.stack_start, 0x1000,
                          UC_PROT_READ | UC_PROT_WRITE)) {
-        fprintf(stderr, "uc_mem_map stack: %s\n", uc_strerror(err));
+        astro_err = astro_uc_perror(astro, "uc_mem_map stack", err);
         goto failure;
     }
     if (err = uc_mem_write(astro->uc, astro->mem_ctx.stack_start,
                            four_kb_of_uninit, 0x1000)) {
-        fprintf(stderr, "uc_mem_write stack: %s\n", uc_strerror(err));
+        astro_err = astro_uc_perror(astro, "uc_mem_write stack", err);
         goto failure;
     }
 
-    return 1;
+    return NULL;
 
     failure:
-    return 0;
+    return astro_err;
 }
 
 // Called by the segfault handler so as not to throw unnecessary
 // segfaults for stack growth
-int is_access_within_stack_growth_region(astro_t *astro, uint64_t addr,
-                                         uint64_t size) {
+int astro_is_access_within_stack_growth_region(astro_t *astro,
+                                               uint64_t addr,
+                                               uint64_t size) {
     uint64_t end_addr = addr + size - 1;
     return addr >= astro->mem_ctx.stack_start - 0x1000 &&
            addr <= astro->mem_ctx.stack_start - 1 &&
@@ -45,7 +47,7 @@ int is_access_within_stack_growth_region(astro_t *astro, uint64_t addr,
 
 // sbrk(), basically
 static int mem_ctx_grow_heap(astro_t *astro, uint64_t size,
-                             heap_block_t **block_out) {
+                                   heap_block_t **block_out) {
     uc_err err;
     heap_block_t *new_block = NULL;
     uint64_t size_rounded = ROUND_TO_4K(size + 2*HEAP_BLOCK_PADDING);
@@ -97,7 +99,7 @@ static int mem_ctx_grow_heap(astro_t *astro, uint64_t size,
 }
 
 static int mem_ctx_heap_malloc(astro_t *astro, uint64_t size,
-                               uint64_t *addr_out) {
+                                     uint64_t *addr_out) {
     heap_block_t *exact_match = NULL;
     heap_block_t *split_match = NULL;
 
@@ -397,16 +399,18 @@ static void realloc_stub(astro_t *astro, void *user_data) {
     astro_stub_die(astro);
 }
 
-int mem_ctx_setup(astro_t *astro) {
+const astro_err_t *astro_mem_ctx_setup(astro_t *astro) {
+    const astro_err_t *astro_err = NULL;
+
     // Set 4K of uninitialized memory to 0x69s
     // (reused to initialize memory deterministically)
     mem_uninit_init();
 
     // Now, need to setup stack and heap -- allocate 8K for each
     // Put heap right where __heap_start is (from linker script)
-    if (!get_symbol_addr(astro, HEAP_START_SYMBOL,
-                         &astro->mem_ctx.heap_start)) {
-        fprintf(stderr, "where is my " HEAP_START_SYMBOL " symbol?\n");
+    if (!astro_get_symbol_addr(astro, HEAP_START_SYMBOL,
+                               &astro->mem_ctx.heap_start)) {
+        astro_err = astro_errorf(astro, "where is my " HEAP_START_SYMBOL " symbol?");
         goto failure;
     }
     // zero-length heap for now
@@ -417,14 +421,14 @@ int mem_ctx_setup(astro_t *astro) {
     astro->mem_ctx.stack_start = STACK_HIGH;
 
     // now setup stack
-    if (!grow_stack(astro))
+    if (astro_err = astro_grow_stack(astro))
         goto failure;
 
     astro->mem_ctx.heap_blocks = NULL;
 
     // Setup malloc(), calloc(), realloc(), free() stubs
     #define SETUP_MALLOC_STUB(name) \
-        if (!astro_stub_setup(astro, NULL, #name, name ## _stub)) \
+        if (astro_err = astro_stub_setup(astro, NULL, #name, name ## _stub)) \
             goto failure;
 
     SETUP_MALLOC_STUB(malloc);
@@ -432,13 +436,13 @@ int mem_ctx_setup(astro_t *astro) {
     SETUP_MALLOC_STUB(calloc);
     SETUP_MALLOC_STUB(realloc);
 
-    return 1;
+    return NULL;
 
     failure:
-    return 0;
+    return astro_err;
 }
 
-void mem_ctx_cleanup(astro_t *astro) {
+void astro_mem_ctx_cleanup(astro_t *astro) {
     if (!astro)
         return;
 

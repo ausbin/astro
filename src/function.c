@@ -33,7 +33,7 @@ int astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
     }
 
     uint64_t func_addr;
-    if (!get_symbol_addr(astro, name, &func_addr)) {
+    if (!astro_get_symbol_addr(astro, name, &func_addr)) {
         fprintf(stderr, "cannot find symbol `%s'\n", name);
         goto failure;
     }
@@ -41,7 +41,7 @@ int astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
     // at the entry point, there's a halt instruction which
     // stops the simulation
     uint64_t return_address;
-    if (!get_entry_point_addr(astro, &return_address))
+    if (!astro_get_entry_point_addr(astro, &return_address))
         goto failure;
 
     uint64_t stack_bottom = astro->mem_ctx.stack_end - 8;
@@ -118,7 +118,7 @@ static int _print_backtrace(astro_t *astro, enum stack_state stack_state) {
     // the backtrace (should be "magic" to students). So grab the entry
     // point from the ELF header, and stop printing when we hit it
     uint64_t final_return_addr;
-    if (!get_entry_point_addr(astro, &final_return_addr))
+    if (!astro_get_entry_point_addr(astro, &final_return_addr))
         goto failure;
 
     uint64_t base_pointer;
@@ -317,11 +317,13 @@ void astro_stub_die(astro_t *astro) {
         fprintf(stderr, "uc_emu_stop: %s\n", uc_strerror(err));
 }
 
-int astro_stub_setup(astro_t *astro, void *user_data, const char *name,
-                     astro_stub_impl_t impl) {
+const astro_err_t *astro_stub_setup(astro_t *astro, void *user_data,
+                                    const char *name,
+                                    astro_stub_impl_t impl) {
+    const astro_err_t *astro_err = NULL;
     uint64_t func_addr;
-    if (!get_symbol_addr(astro, name, &func_addr)) {
-        fprintf(stderr, "cannot find symbol `%s'\n", name);
+    if (!astro_get_symbol_addr(astro, name, &func_addr)) {
+        astro_err = astro_errorf(astro, "cannot find symbol `%s'", name);
         goto failure;
     }
 
@@ -329,8 +331,8 @@ int astro_stub_setup(astro_t *astro, void *user_data, const char *name,
     for (; i < MAX_STUBS && stubs[i].valid; i++);
 
     if (i == MAX_STUBS) {
-        fprintf(stderr, "max number of stubs %d reached, can't create stub\n",
-                MAX_STUBS);
+        astro_err = astro_errorf(astro, "max number of stubs %d reached, "
+                                 "can't create stub", MAX_STUBS);
         goto failure;
     }
 
@@ -345,12 +347,13 @@ int astro_stub_setup(astro_t *astro, void *user_data, const char *name,
 
     if (err = uc_hook_add(astro->uc, &stub->hook, UC_HOOK_CODE,
                           FP2VOID(hook_cb), stub, func_addr, func_addr)) {
-        fprintf(stderr, "uc_hook_add for stub %s: %s\n", name, uc_strerror(err));
+        astro_err = astro_errorf(astro, "uc_hook_add for stub %s: %s", name,
+                                 uc_strerror(err));
         goto failure;
     }
 
-    return 1;
+    return NULL;
 
     failure:
-    return 0;
+    return astro_err;
 }

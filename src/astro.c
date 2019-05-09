@@ -16,8 +16,8 @@ static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
 
     astro_t *astro = user_data;
 
-    if (is_access_within_stack_growth_region(astro, address, size)) {
-        grow_stack(astro);
+    if (astro_is_access_within_stack_growth_region(astro, address, size)) {
+        astro_grow_stack(astro);
         return true;
     } else {
         const char *access_name;
@@ -50,20 +50,25 @@ static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
     }
 }
 
-astro_t *astro_new(const char *elf_filename) {
-    uc_err err;
+const astro_err_t *astro_new(const char *elf_filename, astro_t **astro_out) {
+    const astro_err_t *astro_err = NULL;
+    static const astro_err_t oom_err = {.msg = "calloc: Out of Memory",
+                                        .backtrace_len = 0,
+                                        .backtrace = NULL};
 
     astro_t *astro = calloc(1, sizeof (astro_t));
     if (!astro) {
-        perror("calloc");
+        astro_err = &oom_err;
         goto failure;
     }
 
-    if (!open_elf(elf_filename, &astro->binfp, &astro->elf, &astro->dwarf))
+    if (astro_err = astro_open_elf(astro, elf_filename, &astro->binfp,
+                                   &astro->elf, &astro->dwarf))
         goto failure;
 
+    uc_err err;
     if (err = uc_open(UC_ARCH_X86, UC_MODE_64, &astro->uc)) {
-        fprintf(stderr, "uc_open: %s\n", uc_strerror(err));
+        astro_err = astro_uc_perror(astro, "uc_open", err);
         goto failure;
     }
 
@@ -72,7 +77,7 @@ astro_t *astro_new(const char *elf_filename) {
     uc_cb_eventmem_t segfault_cb = handle_segfault;
     if (err = uc_hook_add(astro->uc, &hh, UC_HOOK_MEM_INVALID,
                           FP2VOID(segfault_cb), astro, MIN_ADDR, MAX_ADDR)) {
-        fprintf(stderr, "uc_hook_add segfault handler: %s\n", uc_strerror(err));
+        astro_err = astro_uc_perror(astro, "uc_hook_add segfault handler", err);
         goto failure;
     }
 
@@ -83,26 +88,27 @@ astro_t *astro_new(const char *elf_filename) {
     uc_cb_hookcode_t code_cb = noop_code_hook;
     if (err = uc_hook_add(astro->uc, &hh, UC_HOOK_CODE,
                           FP2VOID(code_cb), astro, MIN_ADDR, MAX_ADDR)) {
-        fprintf(stderr, "uc_hook_add hack segfault handler: %s\n", uc_strerror(err));
+        astro_err = astro_uc_perror(astro, "uc_hook_add hack segfault handler", err);
         return false;
     }
 
-    if (!load_sections(astro))
+    if (astro_err = astro_load_sections(astro))
         goto failure;
 
-    if (!mem_ctx_setup(astro))
+    if (astro_err = astro_mem_ctx_setup(astro))
         goto failure;
 
-    return astro;
+    *astro_out = astro;
+    return NULL;
 
     failure:
     astro_free(astro);
-    return NULL;
+    return astro_err;
 }
 
 void astro_free(astro_t *astro) {
     if (astro) {
-        mem_ctx_cleanup(astro);
+        astro_mem_ctx_cleanup(astro);
         if (astro->dwarf) dwarf_end(astro->dwarf);
         if (astro->elf) elf_end(astro->elf);
         if (astro->binfp) fclose(astro->binfp);

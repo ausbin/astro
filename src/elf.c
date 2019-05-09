@@ -6,42 +6,48 @@
 #include <gelf.h>
 #include "defs.h"
 
-int open_elf(const char *filename, FILE **fp_out, Elf **elf_out,
-             Dwarf **dwarf_out) {
+const astro_err_t *astro_open_elf(astro_t *astro, const char *filename,
+                                  FILE **fp_out, Elf **elf_out,
+                                  Dwarf **dwarf_out) {
+    const astro_err_t *astro_err = NULL;
+    Elf *elf = NULL;
+
     FILE *binfp = fopen(filename, "r");
     if (!binfp) {
-        perror("fopen");
-        return 0;
+        astro_err = astro_perror(astro, "fopen elf");
+        goto failure;
     }
 
     // hi libelf, i'm using the current version!
     elf_version(EV_CURRENT);
 
-    Elf *elf = elf_begin(fileno(binfp), ELF_C_READ_MMAP, NULL);
+    elf = elf_begin(fileno(binfp), ELF_C_READ_MMAP, NULL);
 
-    if (!elf) {
-        fprintf(stderr, "elf_begin: %s\n", elf_errmsg(-1));
-        fclose(binfp);
-        return 0;
-    }
+    if (!elf)
+        return astro_elf_perror(astro, "elf_begin");
 
     Dwarf *dwarf = dwarf_begin_elf(elf, DWARF_C_READ, NULL);
 
     if (!elf) {
-        fprintf(stderr, "dwarf_begin_elf: %s\n", dwarf_errmsg(-1));
-        elf_end(elf);
-        fclose(binfp);
-        return 0;
+        astro_err = astro_dwarf_perror(astro, "dwarf_begin_elf");
+        goto failure;
     }
 
     *fp_out = binfp;
     *elf_out = elf;
     *dwarf_out = dwarf;
 
-    return 1;
+    return NULL;
+
+    failure:
+    if (elf)
+        elf_end(elf);
+    if (binfp)
+        fclose(binfp);
+    return astro_err;
 }
 
-int get_entry_point_addr(astro_t *astro, uint64_t *addr_out) {
+int astro_get_entry_point_addr(astro_t *astro, uint64_t *addr_out) {
     GElf_Ehdr elf_header;
     if (!gelf_getehdr(astro->elf, &elf_header)) {
         fprintf(stderr, "gelf_getehdr: %s\n", elf_errmsg(-1));
@@ -51,7 +57,8 @@ int get_entry_point_addr(astro_t *astro, uint64_t *addr_out) {
     return 1;
 }
 
-int load_sections(astro_t *astro) {
+const astro_err_t *astro_load_sections(astro_t *astro) {
+    const astro_err_t *astro_err = NULL;
     uc_err err;
     Elf_Scn *scn = NULL;
 
@@ -59,14 +66,14 @@ int load_sections(astro_t *astro) {
     size_t shdrstrndx;
 
     if (elf_getshdrstrndx(astro->elf, &shdrstrndx)) {
-        fprintf(stderr, "elf_getshdrstrndx: %s\n", elf_errmsg(-1));
+        astro_err = astro_elf_perror(astro, "elf_getshdrstrndx");
         goto failure;
     }
 
     while (scn = elf_nextscn(astro->elf, scn)) {
         GElf_Shdr shdr;
         if (!gelf_getshdr(scn, &shdr)) {
-            fprintf(stderr, "elf_getshdr: %s\n", elf_errmsg(-1));
+            astro_err = astro_elf_perror(astro, "elf_getshdr");
             goto failure;
         }
 
@@ -74,7 +81,7 @@ int load_sections(astro_t *astro) {
                                               shdr.sh_name);
 
         if (!section_name) {
-            fprintf(stderr, "elf_strptr: %s\n", elf_errmsg(-1));
+            astro_err = astro_elf_perror(astro, "elf_strptr");
             goto failure;
         }
 
@@ -86,7 +93,7 @@ int load_sections(astro_t *astro) {
         Elf_Data *data = elf_getdata(scn, NULL);
 
         if (!data) {
-            fprintf(stderr, "elf_getdata: %s\n", elf_errmsg(-1));
+            astro_err = astro_elf_perror(astro, "elf_getdata");
             goto failure;
         }
 
@@ -97,15 +104,15 @@ int load_sections(astro_t *astro) {
         else if (!strcmp(section_name, ".data") || !strcmp(section_name, ".bss"))
             perms = UC_PROT_READ | UC_PROT_WRITE;
         else {
-            fprintf(stderr, "unrecognized section `%s'\n", section_name);
+            astro_err = astro_errorf(astro, "unrecognized section `%s'", section_name);
             goto failure;
         }
 
         uint64_t length_rounded = ROUND_TO_4K(shdr.sh_size);
 
         if (err = uc_mem_map(astro->uc, shdr.sh_addr, length_rounded, perms)) {
-            fprintf(stderr, "uc_mem_map section %s: %s\n", section_name,
-                    uc_strerror(err));
+            astro_err = astro_errorf(astro, "uc_mem_map section %s: %s",
+                                     section_name, uc_strerror(err));
             goto failure;
         }
 
@@ -115,16 +122,16 @@ int load_sections(astro_t *astro) {
                  addr += 0x1000) {
                 if (err = uc_mem_write(astro->uc, addr, four_kb_of_zeros,
                                        0x1000)) {
-                    fprintf(stderr, "uc_mem_write %s: %s\n", section_name,
-                            uc_strerror(err));
+                    astro_err = astro_errorf(astro, "uc_mem_write section %s: %s",
+                                             section_name, uc_strerror(err));
                     goto failure;
                 }
             }
         } else {
             if (err = uc_mem_write(astro->uc, shdr.sh_addr, data->d_buf,
                                    shdr.sh_size)) {
-                fprintf(stderr, "uc_mem_write %s: %s\n", section_name,
-                        uc_strerror(err));
+                astro_err = astro_errorf(astro, "uc_mem_write section %s: %s",
+                                         section_name, uc_strerror(err));
                 goto failure;
             }
 
@@ -132,21 +139,22 @@ int load_sections(astro_t *astro) {
                 if (err = uc_mem_write(astro->uc, shdr.sh_addr + shdr.sh_size,
                                        four_kb_of_uninit,
                                        length_rounded - shdr.sh_size)) {
-                    fprintf(stderr, "uc_mem_write zero padding for %s: %s\n",
-                            section_name, uc_strerror(err));
+                    astro_err = astro_errorf(astro, "uc_mem_write zero padding for %s: %s",
+                                             section_name, uc_strerror(err));
                     goto failure;
                 }
             }
         }
     }
 
-    return 1;
+    return NULL;
 
     failure:
-    return 0;
+    return astro_err;
 }
 
-int get_symbol_addr(astro_t *astro, const char *needle_name, uint64_t *addr_out) {
+int astro_get_symbol_addr(astro_t *astro, const char *needle_name,
+                          uint64_t *addr_out) {
     // the section number of the ELF string section
     size_t shdrstrndx;
 

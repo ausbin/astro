@@ -46,15 +46,22 @@ struct astro {
     Dwarf *dwarf;
     uc_engine *uc;
     mem_ctx_t mem_ctx;
+
+    // Pre-allocate error handling memory so that malloc()ing cannot
+    // fail when handling an error
+    astro_err_t err_mem;
+    char msg_mem[2048];
+    astro_bt_t bt_mem[64];
 };
 
 // elf.c
-extern int open_elf(const char *filename, FILE **fp_out, Elf **elf_out,
-                    Dwarf **dwarf_out);
-extern int get_entry_point_addr(astro_t *astro, uint64_t *addr_out);
-extern int load_sections(astro_t *astro);
-extern int get_symbol_addr(astro_t *astro, const char *needle_name,
-                           uint64_t *addr_out);
+extern const astro_err_t *astro_open_elf(astro_t *astro, const char *filename,
+                                         FILE **fp_out, Elf **elf_out,
+                                         Dwarf **dwarf_out);
+extern int astro_get_entry_point_addr(astro_t *astro, uint64_t *addr_out);
+extern const astro_err_t *astro_load_sections(astro_t *astro);
+extern int astro_get_symbol_addr(astro_t *astro, const char *needle_name,
+                                 uint64_t *addr_out);
 
 // mem.c pt. 2
 #define ROUND_TO_4K(size) (((size) + 0xfff) & ~0xfff)
@@ -73,13 +80,21 @@ extern int get_symbol_addr(astro_t *astro, const char *needle_name,
 // The symbol defined in student.ld as marking the end of the student program
 #define HEAP_START_SYMBOL "__heap_start"
 
-extern int mem_ctx_setup(astro_t *astro);
-extern void mem_ctx_cleanup(astro_t *astro);
-extern int is_access_within_stack_growth_region(astro_t *astro, uint64_t addr,
-                                                uint64_t size);
-extern int grow_stack(astro_t *astro);
+extern const astro_err_t *astro_mem_ctx_setup(astro_t *astro);
+extern void astro_mem_ctx_cleanup(astro_t *astro);
+extern int astro_is_access_within_stack_growth_region(astro_t *astro,
+                                                      uint64_t addr,
+                                                      uint64_t size);
+extern const astro_err_t *astro_grow_stack(astro_t *astro);
 
 extern const char four_kb_of_zeros[0x1000];
 extern char four_kb_of_uninit[0x1000];
+
+// err.c
+extern const astro_err_t *astro_errorf(astro_t *astro, const char *fmt, ...);
+extern const astro_err_t *astro_perror(astro_t *astro, const char *s);
+extern const astro_err_t *astro_uc_perror(astro_t *astro, const char *s, uc_err err);
+extern const astro_err_t *astro_elf_perror(astro_t *astro, const char *s);
+extern const astro_err_t *astro_dwarf_perror(astro_t *astro, const char *s);
 
 #endif
