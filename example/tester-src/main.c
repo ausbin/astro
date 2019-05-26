@@ -24,7 +24,9 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    int ret = !tester_run_test(tester, test);
+    const astro_err_t *astro_err = tester_run_test(tester, test);
+    if (astro_err)
+        astro_print_err(stderr, astro_err);
     tester_free(tester);
-    return ret;
+    return !!astro_err;
 }

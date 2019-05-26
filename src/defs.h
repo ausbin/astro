@@ -93,8 +93,8 @@ extern const char four_kb_of_zeros[0x1000];
 extern char four_kb_of_uninit[0x1000];
 
 // err.c
-extern const astro_err_t *astro_errorf(astro_t *astro, const char *fmt, ...);
-extern const astro_err_t *astro_perror(astro_t *astro, const char *s);
+// Don't expose these to users since they have no business poking around
+// with dependency libraries
 extern const astro_err_t *astro_uc_perror(astro_t *astro, const char *s, uc_err err);
 extern const astro_err_t *astro_elf_perror(astro_t *astro, const char *s);
 extern const astro_err_t *astro_dwarf_perror(astro_t *astro, const char *s);

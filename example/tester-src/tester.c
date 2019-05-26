@@ -63,7 +63,7 @@ test_t *tester_get_test(tester_t *tester, const char *test_name) {
     return NULL;
 }
 
-int tester_run_test(tester_t *tester, test_t *test) {
+const astro_err_t *tester_run_test(tester_t *tester, test_t *test) {
     astro_t *astro;
     const astro_err_t *astro_err;
 
@@ -73,12 +73,12 @@ int tester_run_test(tester_t *tester, test_t *test) {
     if ((astro_err = astro_stub_setup(astro, NULL, "__backtrace", backtrace)))
         goto failure;
 
-    int ret = test->func(test, astro);
-    astro_free(astro);
-    return ret;
+    astro_err = test->func(test, astro);
 
     failure:
-    astro_print_err(stderr, astro_err);
+    // Need to duplicate, since the storage for an error is stored in
+    // the astro_t struct itself
+    astro_err = astro_errdup(astro_err);
     astro_free(astro);
-    return 0;
+    return astro_err;
 }
