@@ -102,7 +102,7 @@ const astro_err_t *astro_new(const char *elf_filename, astro_t **astro_out) {
     return NULL;
 
     failure:
-    astro_free(astro);
+    *astro_out = astro;
     return astro_err;
 }
 

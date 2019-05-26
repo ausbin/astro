@@ -6,13 +6,15 @@
 static void backtrace(astro_t *astro, void *user_data) {
     (void)user_data;
 
-    if (!astro_stub_print_backtrace(astro))
+    const astro_err_t *astro_err;
+
+    if ((astro_err = astro_stub_print_backtrace(astro)))
         goto failure;
 
     return;
 
     failure:
-    astro_stub_die(astro);
+    astro_stub_die(astro, astro_err);
 }
 
 tester_t *tester_new(const char *elf_path) {
@@ -62,12 +64,13 @@ test_t *tester_get_test(tester_t *tester, const char *test_name) {
 }
 
 int tester_run_test(tester_t *tester, test_t *test) {
-    astro_t *astro = astro_new(tester->elf_path);
+    astro_t *astro;
+    const astro_err_t *astro_err;
 
-    if (!astro)
+    if ((astro_err = astro_new(tester->elf_path, &astro)))
         goto failure;
 
-    if (!astro_stub_setup(astro, NULL, "__backtrace", backtrace))
+    if ((astro_err = astro_stub_setup(astro, NULL, "__backtrace", backtrace)))
         goto failure;
 
     int ret = test->func(test, astro);
@@ -75,6 +78,7 @@ int tester_run_test(tester_t *tester, test_t *test) {
     return ret;
 
     failure:
+    astro_print_err(stderr, astro_err);
     astro_free(astro);
     return 0;
 }

@@ -46,6 +46,7 @@ struct astro {
     Dwarf *dwarf;
     uc_engine *uc;
     mem_ctx_t mem_ctx;
+    const astro_err_t *exec_err;
 
     // Pre-allocate error handling memory so that malloc()ing cannot
     // fail when handling an error
@@ -58,7 +59,8 @@ struct astro {
 extern const astro_err_t *astro_open_elf(astro_t *astro, const char *filename,
                                          FILE **fp_out, Elf **elf_out,
                                          Dwarf **dwarf_out);
-extern int astro_get_entry_point_addr(astro_t *astro, uint64_t *addr_out);
+extern const astro_err_t *astro_get_entry_point_addr(astro_t *astro,
+                                                     uint64_t *addr_out);
 extern const astro_err_t *astro_load_sections(astro_t *astro);
 extern int astro_get_symbol_addr(astro_t *astro, const char *needle_name,
                                  uint64_t *addr_out);

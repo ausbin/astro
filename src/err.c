@@ -39,3 +39,8 @@ const astro_err_t *astro_elf_perror(astro_t *astro, const char *s) {
 const astro_err_t *astro_dwarf_perror(astro_t *astro, const char *s) {
     return astro_errorf(astro, "%s: %s", s, dwarf_errmsg(-1));
 }
+
+void astro_print_err(FILE *outfp, const astro_err_t *astro_err) {
+    fprintf(outfp, "ERROR: %s\n", astro_err->msg);
+    // TODO: print backtrace
+}

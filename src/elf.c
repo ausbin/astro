@@ -47,14 +47,14 @@ const astro_err_t *astro_open_elf(astro_t *astro, const char *filename,
     return astro_err;
 }
 
-int astro_get_entry_point_addr(astro_t *astro, uint64_t *addr_out) {
+const astro_err_t *astro_get_entry_point_addr(astro_t *astro,
+                                              uint64_t *addr_out) {
     GElf_Ehdr elf_header;
     if (!gelf_getehdr(astro->elf, &elf_header)) {
-        fprintf(stderr, "gelf_getehdr: %s\n", elf_errmsg(-1));
-        return 0;
+        return astro_elf_perror(astro, "gelf_getehdr");
     }
     *addr_out = elf_header.e_entry;
-    return 1;
+    return NULL;
 }
 
 const astro_err_t *astro_load_sections(astro_t *astro) {

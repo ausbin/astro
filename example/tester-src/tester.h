@@ -41,10 +41,13 @@ typedef struct {
 
 // This is a gcc extension, "statement expressions"
 #define test_call(func_name, ...) ({ \
+    const astro_err_t *astro_err; \
     uint64_t ret; \
     size_t n = sizeof (uint64_t[]){__VA_ARGS__} / sizeof (uint64_t); \
-    if (!astro_call_function(__astro, &ret, n, #func_name, ##__VA_ARGS__)) \
+    if ((astro_err = astro_call_function(__astro, &ret, n, #func_name, ##__VA_ARGS__))) { \
+        astro_print_err(stderr, astro_err); \
         return 0; \
+    } \
     ret; \
 })
 
