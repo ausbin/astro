@@ -2,6 +2,7 @@
 #define TESTER_H
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <astro.h>
 
 typedef struct test test_t;
@@ -39,6 +40,18 @@ typedef struct {
                             "%s: FAIL. %s\n\tFailing condition: %s. %s", \
                             __test->name, __test->description, #cond, message);
 
+#define test_is_malloced_block(ptr, size) ({ \
+    if (!astro_is_malloced_block(__astro, (ptr))) \
+        return false; \
+    \
+    uint64_t actual_size; \
+    const astro_err_t *astro_err; \
+    if ((astro_err = astro_malloced_block_size(__astro, (ptr), &actual_size))) \
+        return astro_err; \
+    \
+    (actual_size == (size)); \
+})
+
 // This is a gcc extension, "statement expressions"
 #define test_call(func_name, ...) ({ \
     const astro_err_t *astro_err; \
@@ -47,6 +60,18 @@ typedef struct {
     if ((astro_err = astro_call_function(__astro, &ret, n, #func_name, ##__VA_ARGS__))) \
         return astro_err; \
     ret; \
+})
+
+#define test_read_mem(ptr, size) ({ \
+    void *block = malloc((size)); \
+    if (!block) \
+        return astro_perror(__astro, "malloc"); \
+    \
+    const astro_err_t *astro_err; \
+    if ((astro_err = astro_read_mem(__astro, (ptr), (size), block))) \
+        return astro_err; \
+    \
+    block; \
 })
 
 #define tester_push(tester, test_name) \

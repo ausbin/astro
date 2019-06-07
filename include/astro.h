@@ -43,4 +43,12 @@ extern const astro_err_t *astro_stub_arg(astro_t *astro, size_t idx,
 extern const astro_err_t *astro_stub_ret(astro_t *astro, uint64_t retval);
 extern void astro_stub_die(astro_t *astro, const astro_err_t *astro_err);
 
+// mem.c
+extern const astro_err_t *astro_read_mem(astro_t *astro, uint64_t addr,
+                                         size_t size, uint64_t *out);
+extern bool astro_is_malloced_block(astro_t *astro, uint64_t addr);
+extern const astro_err_t *astro_malloced_block_size(astro_t *astro,
+                                                    uint64_t addr,
+                                                    size_t *out);
+
 #endif

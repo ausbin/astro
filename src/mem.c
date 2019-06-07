@@ -481,3 +481,37 @@ void astro_mem_ctx_cleanup(astro_t *astro) {
     // Don't keep stray pointers around
     astro->mem_ctx.heap_blocks = NULL;
 }
+
+const astro_err_t *astro_read_mem(astro_t *astro, uint64_t addr, size_t size,
+                                  uint64_t *out) {
+    uc_err err;
+    const astro_err_t *astro_err;
+
+    if (err = uc_mem_read(astro->uc, addr, out, size)) {
+        astro_err = astro_uc_perror(astro, "astro_read_mem", err);
+        goto failure;
+    }
+
+    return NULL;
+
+    failure:
+    return astro_err;
+}
+
+bool astro_is_malloced_block(astro_t *astro, uint64_t addr) {
+    heap_block_t *match = NULL;
+    mem_ctx_heap_find_block(astro, addr, NULL, &match);
+    return !!match;
+}
+
+const astro_err_t *astro_malloced_block_size(astro_t *astro, uint64_t addr,
+                                             size_t *out) {
+    heap_block_t *match = NULL;
+    mem_ctx_heap_find_block(astro, addr, NULL, &match);
+
+    if (!match)
+        return astro_errorf(astro, "block 0x%lx is not a malloced block", addr);
+
+    if (out) *out = match->size;
+    return NULL;
+}
