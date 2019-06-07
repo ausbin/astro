@@ -82,19 +82,26 @@ const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
     va_end(ap);
 
     astro->exec_err = NULL;
+    astro->sim_state = ASTRO_SIM_EXEC;
 
     if (err = uc_emu_start(astro->uc, func_addr, 0, 0, 0)) {
-        // Let the segfault handler take care of segfaults
-        if (err != UC_ERR_READ_UNMAPPED &&
-            err != UC_ERR_WRITE_UNMAPPED &&
-            err != UC_ERR_FETCH_UNMAPPED &&
-            err != UC_ERR_WRITE_PROT &&
-            err != UC_ERR_READ_PROT &&
-            err != UC_ERR_FETCH_PROT)
+        // Let the segfault handler take care of segfaults. It will set
+        // astro->exec_err, so just return that
+        if (err == UC_ERR_READ_UNMAPPED ||
+            err == UC_ERR_WRITE_UNMAPPED ||
+            err == UC_ERR_FETCH_UNMAPPED ||
+            err == UC_ERR_WRITE_PROT ||
+            err == UC_ERR_READ_PROT ||
+            err == UC_ERR_FETCH_PROT)
+            astro_err = astro->exec_err;
+        else
             astro_err = astro_errorf(astro, "uc_emu_start %s(): %s\n", name,
                                      uc_strerror(err));
+
         goto failure;
     }
+
+    astro->sim_state = ASTRO_SIM_NO;
 
     if (ret) {
         if (err = uc_reg_read(astro->uc, UC_X86_REG_RAX, ret)) {
@@ -107,16 +114,25 @@ const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
     return astro->exec_err;
 
     failure:
+    astro->sim_state = ASTRO_SIM_NO;
     return astro_err;
 }
 
-enum stack_state {
-    STACK_STATE_STUB,
-    STACK_STATE_ERROR
-};
+const astro_err_t *astro_make_backtrace(astro_t *astro,
+                                        const astro_bt_t **bt_out,
+                                        size_t *bt_len_out,
+                                        bool *bt_truncated_out) {
+    // No backtrace to make if we're not executing student code
+    if (astro->sim_state == ASTRO_SIM_NO) {
+        *bt_out = NULL;
+        *bt_len_out = 0;
+        *bt_truncated_out = false;
+        return NULL;
+    }
 
-static const astro_err_t *_print_backtrace(astro_t *astro,
-                                           enum stack_state stack_state) {
+    astro_bt_t *bt_arr = astro->bt_mem;
+    size_t bt_arr_max = sizeof astro->bt_mem / sizeof *astro->bt_mem;
+
     const astro_err_t *astro_err;
     uc_err err;
 
@@ -132,6 +148,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
     uint64_t base_pointer;
 
     if (err = uc_reg_read(astro->uc, UC_X86_REG_RBP, &base_pointer)) {
+        // Prevent infinite recursion
+        astro->sim_state = ASTRO_SIM_NO;
         astro_err = astro_uc_perror(astro, "uc_reg_read %%rbp for backtrace",
                                     err);
         goto failure;
@@ -139,7 +157,7 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
 
     uint64_t return_addr;
 
-    if (stack_state == STACK_STATE_STUB) {
+    if (astro->sim_state == ASTRO_SIM_STUB) {
         // If backtrace is being called from a stub, the top of the
         // stack is the return address pushed by student code. So grab
         // it off so we can use it to print the line that called
@@ -147,6 +165,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         uint64_t stack_top_ptr;
 
         if (err = uc_reg_read(astro->uc, UC_X86_REG_RSP, &stack_top_ptr)) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_uc_perror(astro, "uc_reg_read %rsp for backtrace",
                                         err);
             goto failure;
@@ -155,6 +175,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         // Read return address off stack (currently the top of the stack,
         // since stubs don't touch it)
         if (err = uc_mem_read(astro->uc, stack_top_ptr, &return_addr, 8)) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_errorf(astro,
                                      "uc_mem_read address 0x%lx (%%rbp + 8) "
                                      "for backtrace: %s",
@@ -166,6 +188,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         // whoopsie daisy, then we want to start the backtrace at %rip,
         // the PC
         if (err = uc_reg_read(astro->uc, UC_X86_REG_RIP, &return_addr)) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_uc_perror(astro,
                                         "uc_reg_read %rip for backtrace", err);
             goto failure;
@@ -175,12 +199,14 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         return_addr++;
     }
 
-    fprintf(stderr, "  backtrace:\n");
+    unsigned int bt_idx = 0;
+    *bt_truncated_out = false;
 
     // TODO: give up after n iterations (for infinite loops)
     // call_function() above sets %rbp = 0 and pushes the ELF entry
     // point onto the stack when calling a function
-    while (return_addr != final_return_addr && base_pointer) {
+    while (return_addr != final_return_addr && base_pointer &&
+           !(*bt_truncated_out = (bt_idx == bt_arr_max))) {
         // Back up into the last instruction: we want the instruction
         // that made the function call, not the return address
         // TODO: does this always work?
@@ -190,6 +216,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         // DIE) corresponding to this address
         Dwarf_Die cu_die;
         if (!dwarf_addrdie(astro->dwarf, prev_instr_addr, &cu_die)) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_errorf(astro,
                                      "dwarf_addrdie for address 0x%lx for "
                                      "backtrace: %s",
@@ -200,6 +228,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         Dwarf_Die *scopes = NULL;
         int nscopes = dwarf_getscopes(&cu_die, prev_instr_addr, &scopes);
         if (nscopes <= 0) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_errorf(astro,
                                      "dwarf_getscopes for address 0x%lx: %s",
                                      prev_instr_addr,
@@ -216,6 +246,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
                 function_name = dwarf_diename(&scopes[i]);
 
                 if (!function_name) {
+                    // Prevent infinite recursion
+                    astro->sim_state = ASTRO_SIM_NO;
                     astro_err = astro_dwarf_perror(astro, "dwarf_diename");
                     free(scopes);
                     goto failure;
@@ -226,6 +258,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         free(scopes);
 
         if (!function_name) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_errorf(astro,
                                      "can't find function name for 0x%lx",
                                      prev_instr_addr);
@@ -235,6 +269,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         // Find the line for this address
         Dwarf_Line *line;
         if (!(line = dwarf_getsrc_die(&cu_die, prev_instr_addr))) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_errorf(astro,
                                      "dwarf_getsrc_die for address 0x%lx for "
                                      "backtrace: %s",
@@ -244,6 +280,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
 
         const char *filename;
         if (!(filename = dwarf_linesrc(line, NULL, NULL))) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_errorf(astro,
                                      "dwarf_linesrc for address 0x%lx for "
                                      "backtrace: %s",
@@ -254,7 +292,10 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         int lineno;
         dwarf_lineno(line, &lineno);
 
-        fprintf(stderr, "    %s() at %s:%d\n", function_name, filename, lineno);
+        bt_arr[bt_idx].file = astro_intern_str(astro, filename);
+        bt_arr[bt_idx].function = astro_intern_str(astro, function_name);
+        bt_arr[bt_idx].line = lineno;
+        bt_idx++;
 
         // Now: go to the next stack frame.
         // Saved %eip was pushed onto stack right before saved %ebp was
@@ -262,6 +303,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
 
         // Read return address off stack (pushed right before saved %rbp)
         if (err = uc_mem_read(astro->uc, return_addr_ptr, &return_addr, 8)) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_errorf(astro,
                                      "uc_mem_read address 0x%lx (%%rbp + 8) "
                                      "for backtrace: %s",
@@ -270,6 +313,8 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         }
 
         if (err = uc_mem_read(astro->uc, base_pointer, &base_pointer, 8)) {
+            // Prevent infinite recursion
+            astro->sim_state = ASTRO_SIM_NO;
             astro_err = astro_errorf(astro,
                                      "uc_mem_read address 0x%lx (%%rbp) for "
                                      "backtrace: %s\n",
@@ -278,20 +323,13 @@ static const astro_err_t *_print_backtrace(astro_t *astro,
         }
     }
 
+    *bt_out = astro->bt_mem;
+    *bt_len_out = bt_idx;
+
     return NULL;
 
     failure:
     return astro_err;
-}
-
-// Use this when you want to print a backtrace in a stub
-const astro_err_t *astro_stub_print_backtrace(astro_t *astro) {
-    return _print_backtrace(astro, STACK_STATE_STUB);
-}
-
-// Use this when their code is executing and they screw up
-const astro_err_t *astro_print_backtrace(astro_t *astro) {
-    return _print_backtrace(astro, STACK_STATE_ERROR);
 }
 
 static void stub_hook_callback(uc_engine *uc, uint64_t addr, uint32_t size,
@@ -301,7 +339,9 @@ static void stub_hook_callback(uc_engine *uc, uint64_t addr, uint32_t size,
     (void)size;
 
     struct stub *stub = user_data;
+    stub->astro->sim_state = ASTRO_SIM_STUB;
     stub->impl(stub->astro, stub->user_data);
+    stub->astro->sim_state = ASTRO_SIM_EXEC;
 }
 
 const astro_err_t *astro_stub_arg(astro_t *astro, size_t idx, uint64_t *arg_out) {

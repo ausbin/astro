@@ -42,10 +42,10 @@ static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
                 access_name = "access";
         }
 
-        fprintf(stderr, "\nSegmentation Fault\n");
-        fprintf(stderr, "  invalid %s to address 0x%lx of size %d bytes\n\n",
-                access_name, address, size);
-        astro_print_backtrace(astro);
+        astro->exec_err = astro_errorf(astro,
+                                       "Segmentation Fault: invalid %s to "
+                                       "address 0x%lx of size %d bytes",
+                                       access_name, address, size);
         return false;
     }
 }
@@ -61,6 +61,12 @@ const astro_err_t *astro_new(const char *elf_filename, astro_t **astro_out) {
         astro_err = &oom_err;
         goto failure;
     }
+
+    astro->sim_state = ASTRO_SIM_NO;
+
+    // No message memory has been used yet, so point the next pointer to
+    // the beginning of it
+    astro->msg_mem_next = astro->msg_mem;
 
     if (astro_err = astro_open_elf(astro, elf_filename, &astro->binfp,
                                    &astro->elf, &astro->dwarf))

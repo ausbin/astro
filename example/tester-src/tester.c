@@ -3,20 +3,6 @@
 #include <string.h>
 #include "tester.h"
 
-static void backtrace(astro_t *astro, void *user_data) {
-    (void)user_data;
-
-    const astro_err_t *astro_err;
-
-    if ((astro_err = astro_stub_print_backtrace(astro)))
-        goto failure;
-
-    return;
-
-    failure:
-    astro_stub_die(astro, astro_err);
-}
-
 tester_t *tester_new(const char *elf_path) {
     tester_t *tester = calloc(1, sizeof (tester_t));
     if (!tester) {
@@ -68,9 +54,6 @@ const astro_err_t *tester_run_test(tester_t *tester, test_t *test) {
     const astro_err_t *astro_err;
 
     if ((astro_err = astro_new(tester->elf_path, &astro)))
-        goto failure;
-
-    if ((astro_err = astro_stub_setup(astro, NULL, "__backtrace", backtrace)))
         goto failure;
 
     astro_err = test->func(test, astro);

@@ -40,6 +40,19 @@ typedef struct {
 } mem_ctx_t;
 
 // astro.c
+enum astro_sim_state {
+    // Not currently simulating student code
+    ASTRO_SIM_NO,
+    // Their code was being executed but encountered a runtime issue
+    // (e.g., segfault)
+    ASTRO_SIM_EXEC,
+    // They called a stub
+    // (special case of ASTRO_SIM_EXEC that is necessary because the
+    //  stack/registers are in a different state when the student calls
+    //  a stub versus when they cause a runtime error)
+    ASTRO_SIM_STUB
+};
+
 struct astro {
     FILE *binfp;
     Elf *elf;
@@ -47,6 +60,9 @@ struct astro {
     uc_engine *uc;
     mem_ctx_t mem_ctx;
     const astro_err_t *exec_err;
+    enum astro_sim_state sim_state;
+    // Pointer to unused message memory (below)
+    char *msg_mem_next;
 
     // Pre-allocate error handling memory so that malloc()ing cannot
     // fail when handling an error
@@ -98,5 +114,12 @@ extern char four_kb_of_uninit[0x1000];
 extern const astro_err_t *astro_uc_perror(astro_t *astro, const char *s, uc_err err);
 extern const astro_err_t *astro_elf_perror(astro_t *astro, const char *s);
 extern const astro_err_t *astro_dwarf_perror(astro_t *astro, const char *s);
+extern const char *astro_intern_str(astro_t *astro, const char *src);
+
+// function.c
+const astro_err_t *astro_make_backtrace(astro_t *astro,
+                                        const astro_bt_t **bt_out,
+                                        size_t *bt_len_out,
+                                        bool *bt_truncated_out);
 
 #endif

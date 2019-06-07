@@ -1,6 +1,7 @@
 #ifndef ASTRO_H
 #define ASTRO_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -15,6 +16,7 @@ typedef struct {
 typedef struct astro_err {
     const char *msg;
     size_t backtrace_len;
+    bool backtrace_truncated;
     const astro_bt_t *backtrace;
 } astro_err_t;
 
@@ -33,8 +35,6 @@ typedef void (*astro_stub_impl_t)(astro_t *astro, void *user_data);
 
 extern const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret,
                                               size_t n, const char *name, ...);
-extern const astro_err_t *astro_print_backtrace(astro_t *astro);
-extern const astro_err_t *astro_stub_print_backtrace(astro_t *astro);
 extern const astro_err_t *astro_stub_setup(astro_t *astro, void *user_data,
                                            const char *name,
                                            astro_stub_impl_t impl);

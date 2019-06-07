@@ -8,19 +8,28 @@ const astro_err_t *astro_errorf(astro_t *astro, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
 
-    size_t n = vsnprintf(astro->msg_mem, sizeof astro->msg_mem, fmt, ap);
-    if (n == sizeof astro->msg_mem) {
+    size_t max = astro->msg_mem + sizeof astro->msg_mem - astro->msg_mem_next;
+    size_t n = vsnprintf(astro->msg_mem_next, max, fmt, ap);
+    if (n == max && n >= 3) {
         // put "..." if truncated
         for (int i = 0; i < 3; i++)
-            astro->msg_mem[n - 2 - i] = '.';
-        astro->msg_mem[n - 1] = '\0';
+            astro->msg_mem_next[n - 2 - i] = '.';
+        astro->msg_mem_next[n - 1] = '\0';
     }
 
     va_end(ap);
 
-    astro->err_mem.msg = astro->msg_mem;
-    astro->err_mem.backtrace_len = 0;
-    astro->err_mem.backtrace = NULL;
+    astro->err_mem.msg = astro->msg_mem_next;
+    // +1 accounts for null terminator
+    astro->msg_mem_next += n + 1;
+
+    const astro_err_t *astro_err;
+    if (astro_err = astro_make_backtrace(
+            astro, &astro->err_mem.backtrace, &astro->err_mem.backtrace_len,
+            &astro->err_mem.backtrace_truncated)) {
+        return astro_err;
+    }
+
     return &astro->err_mem;
 }
 
@@ -42,7 +51,12 @@ const astro_err_t *astro_dwarf_perror(astro_t *astro, const char *s) {
 
 void astro_print_err(FILE *outfp, const astro_err_t *astro_err) {
     fprintf(outfp, "ERROR: %s\n", astro_err->msg);
-    // TODO: print backtrace
+
+    for (unsigned int i = 0; i < astro_err->backtrace_len; i++) {
+        const astro_bt_t *frame = &astro_err->backtrace[i];
+        fprintf(outfp, "    %s() at %s:%d\n", frame->function, frame->file,
+                                              frame->line);
+    }
 }
 
 const astro_err_t *astro_errdup(const astro_err_t *astro_err) {
@@ -56,6 +70,7 @@ const astro_err_t *astro_errdup(const astro_err_t *astro_err) {
     }
 
     result->backtrace_len = astro_err->backtrace_len;
+    result->backtrace_truncated = astro_err->backtrace_truncated;
 
     if (astro_err->msg) {
         char *msg = malloc(strlen(astro_err->msg) + 1);
@@ -102,6 +117,8 @@ const astro_err_t *astro_errdup(const astro_err_t *astro_err) {
             free(bt);
             goto failure;
         }
+
+        result->backtrace = bt;
     }
 
     return result;
@@ -122,4 +139,17 @@ const astro_err_t *astro_errdup(const astro_err_t *astro_err) {
                                         .backtrace_len = 0,
                                         .backtrace = NULL};
     return &oom_err;
+}
+
+const char *astro_intern_str(astro_t *astro, const char *src) {
+    size_t size = strlen(src) + 1;
+    size_t max = astro->msg_mem + sizeof astro->msg_mem - astro->msg_mem_next;
+    if (size > max) {
+        return "??";
+    } else {
+        char *ret = astro->msg_mem_next;
+        strcpy(ret, src);
+        astro->msg_mem_next += size;
+        return ret;
+    }
 }
