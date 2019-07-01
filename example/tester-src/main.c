@@ -9,24 +9,48 @@ static void print_usage(const char *prog) {
     // TODO: print available tests
 }
 
+static int run_test(tester_t *tester, test_t *test) {
+    const astro_err_t *astro_err = tester_run_test(tester, test);
+    if (astro_err)
+        astro_print_err(stderr, astro_err);
+    return !!astro_err;
+}
+
 int main(int argc, char **argv) {
-    if (argc-1 != 1) {
+    char *test_name = NULL;
+
+    if (argc-1 == 1) {
+        test_name = argv[1];
+    } else if (argc-1 > 1) {
         print_usage(argv[0]);
         return 1;
     }
 
     tester_t *tester = tester_new("student.elf");
     add_list_suite(tester);
+    add_meta_list_suite(tester);
 
-    test_t *test;
-    if (!(test = tester_get_test(tester, argv[1]))) {
-        fprintf(stderr, "error: unknown test `%s'\n", argv[1]);
-        return 1;
+    int exit_code = 0;
+
+    if (test_name) {
+        test_t *test;
+        if (!(test = tester_get_test(tester, argv[1]))) {
+            fprintf(stderr, "error: unknown test `%s'\n", argv[1]);
+            exit_code = 1;
+        }
+        exit_code = run_test(tester, test);
+    } else {
+        for (unsigned int i = 0; i < tester->tests_count; i++) {
+            test_t *test = &tester->tests[i];
+            exit_code = exit_code || run_test(tester, test);
+        }
     }
 
-    const astro_err_t *astro_err = tester_run_test(tester, test);
-    if (astro_err)
-        astro_print_err(stderr, astro_err);
     tester_free(tester);
-    return !!astro_err;
+
+    // Print something on success to avoid student confusion
+    if (!exit_code)
+        printf("tests passed! nice work\n");
+
+    return exit_code;
 }

@@ -33,6 +33,9 @@ extern const astro_err_t *astro_errdup(const astro_err_t *astro_err);
 // function.c
 typedef void (*astro_stub_impl_t)(astro_t *astro, void *user_data);
 
+extern const astro_err_t *astro_mock_func(astro_t *astro,
+                                          const char *func_name,
+                                          const char *mock_func_name);
 extern const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret,
                                               size_t n, const char *name, ...);
 extern const astro_err_t *astro_stub_setup(astro_t *astro, void *user_data,
@@ -46,9 +49,11 @@ extern void astro_stub_die(astro_t *astro, const astro_err_t *astro_err);
 // mem.c
 extern const astro_err_t *astro_read_mem(astro_t *astro, uint64_t addr,
                                          size_t size, uint64_t *out);
+extern bool astro_is_freed_block(astro_t *astro, uint64_t addr);
 extern bool astro_is_malloced_block(astro_t *astro, uint64_t addr);
 extern const astro_err_t *astro_malloced_block_size(astro_t *astro,
                                                     uint64_t addr,
                                                     size_t *out);
+
 
 #endif

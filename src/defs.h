@@ -18,12 +18,23 @@
 #define MIN(a, b) ((a) < (b)? (a) : (b))
 
 // mem.c pt. 1
+typedef enum {
+    // Never returned to the student at all. Only blocks in this state
+    // will be returned to the student so that we control how memory
+    // that malloc returns a pointer to is initialized
+    UNTOUCHED,
+    // free()d. Will not be used again to prevent confusing behavior
+    FREED,
+    // returned by malloc() and not yet free()d
+    MALLOCED
+} heap_block_state_t;
+
 typedef struct heap_block {
     // pointer to beginning of padding
     uint64_t addr;
     // does not include padding
     uint64_t size;
-    int alloced;
+    heap_block_state_t state;
     struct heap_block *next;
     uc_hook access_hook;
 } heap_block_t;
@@ -38,6 +49,20 @@ typedef struct {
     uc_hook stack_hook;
     heap_block_t *heap_blocks;
 } mem_ctx_t;
+
+// function.c pt 1
+typedef struct {
+    const char *func_name;
+    const char *mock_func_name;
+} mock_func_t;
+
+typedef struct stub {
+    int valid;
+    astro_t *astro;
+    void *user_data;
+    astro_stub_impl_t impl;
+    uc_hook hook;
+} stub_t;
 
 // astro.c
 enum astro_sim_state {
@@ -61,6 +86,12 @@ struct astro {
     mem_ctx_t mem_ctx;
     const astro_err_t *exec_err;
     enum astro_sim_state sim_state;
+
+    // Function mocking (useful for meta-testing, that is writing tests
+    // for tests to make sure astro/tester works)
+    mock_func_t mock_funcs[4];
+    stub_t stubs[32];
+
     // Pointer to unused message memory (below)
     char *msg_mem_next;
 

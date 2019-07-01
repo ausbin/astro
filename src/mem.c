@@ -79,7 +79,7 @@ static const astro_err_t *mem_ctx_grow_heap(astro_t *astro, uint64_t size,
 
     new_block->addr = astro->mem_ctx.heap_end;
     new_block->size = size_rounded - 2*HEAP_BLOCK_PADDING;
-    new_block->alloced = 0;
+    new_block->state = UNTOUCHED;
     new_block->next = NULL;
 
     heap_block_t *tail = astro->mem_ctx.heap_blocks;
@@ -109,9 +109,10 @@ static const astro_err_t *mem_ctx_heap_malloc(astro_t *astro, uint64_t size,
     for (heap_block_t *b = astro->mem_ctx.heap_blocks;
          b && !exact_match && !split_match;
          b = b->next)
-        if (!b->alloced && b->size == size)
+        if (b->state == UNTOUCHED && b->size == size)
             exact_match = b;
-        else if (!b->alloced && b->size >= size + 2*HEAP_BLOCK_PADDING + 1)
+        else if (b->state == UNTOUCHED &&
+                 b->size >= size + 2*HEAP_BLOCK_PADDING + 1)
             split_match = b;
 
     // Need to map some more space
@@ -149,7 +150,7 @@ static const astro_err_t *mem_ctx_heap_malloc(astro_t *astro, uint64_t size,
         result->addr = split_match->addr + split_match->size + 2*HEAP_BLOCK_PADDING;
     }
 
-    result->alloced = 1;
+    result->state = MALLOCED;
     *addr_out = result->addr + HEAP_BLOCK_PADDING;
 
     return NULL;
@@ -179,16 +180,6 @@ static void mem_ctx_heap_find_block(astro_t *astro, uint64_t addr,
         *match_out = match;
 }
 
-// merge right block into left
-static void mem_ctx_heap_merge(heap_block_t *left, heap_block_t *right) {
-    if (left && right && !left->alloced && !right->alloced &&
-            left->addr + 2*HEAP_BLOCK_PADDING + left->size == right->addr) {
-        left->size += 2*HEAP_BLOCK_PADDING + right->size;
-        left->next = right->next;
-        free(right);
-    }
-}
-
 static const astro_err_t *mem_ctx_heap_free(astro_t *astro, uint64_t addr) {
     const astro_err_t *astro_err;
     heap_block_t *prev = NULL;
@@ -203,17 +194,24 @@ static const astro_err_t *mem_ctx_heap_free(astro_t *astro, uint64_t addr) {
         goto failure;
     }
 
-    if (!match->alloced) {
+    if (match->state == FREED) {
         // TODO: this error message is garbage
         // TODO: not necessarily a double free
         astro_err = astro_errorf(astro, "Double free() of address 0x%lx!\n",
                                  addr);
         goto failure;
+    } else if (match->state == UNTOUCHED) {
+        astro_err = astro_errorf(astro, "free()ing a pointer 0x%lx not yet "
+                                        "returned by malloc()! Are you a time "
+                                        "traveller?\n", addr);
+        goto failure;
     }
 
-    match->alloced = 0;
-    mem_ctx_heap_merge(match, match->next);
-    mem_ctx_heap_merge(prev, match);
+    match->state = FREED;
+
+    // Don't attempt merges because we don't want block to move around
+    // on free(). For example, if the student returns a free()d block,
+    // we need to know it's freed
 
     return NULL;
 
@@ -273,12 +271,17 @@ static const astro_err_t *mem_ctx_heap_realloc(astro_t *astro,
             goto failure;
         }
 
-        if (!match->alloced) {
+        if (match->state == FREED) {
             // TODO: this error message is semi garbage
             astro_err = astro_errorf(astro,
                                      "realloc() called on free block 0x%lx! "
                                      "Do not free() a pointer before passing "
                                      "it to ralloc()!\n", ptr);
+            goto failure;
+        } else if (match->state == UNTOUCHED) {
+            astro_err = astro_errorf(astro, "realloc()ing a pointer 0x%lx not "
+                                            "yet returned by malloc()! Are "
+                                            "you a time traveller?\n", ptr);
             goto failure;
         }
 
@@ -498,10 +501,16 @@ const astro_err_t *astro_read_mem(astro_t *astro, uint64_t addr, size_t size,
     return astro_err;
 }
 
+bool astro_is_freed_block(astro_t *astro, uint64_t addr) {
+    heap_block_t *match = NULL;
+    mem_ctx_heap_find_block(astro, addr, NULL, &match);
+    return match && match->state == FREED;
+}
+
 bool astro_is_malloced_block(astro_t *astro, uint64_t addr) {
     heap_block_t *match = NULL;
     mem_ctx_heap_find_block(astro, addr, NULL, &match);
-    return !!match;
+    return match && match->state == MALLOCED;
 }
 
 const astro_err_t *astro_malloced_block_size(astro_t *astro, uint64_t addr,

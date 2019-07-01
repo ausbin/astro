@@ -1,15 +1,7 @@
+#include <string.h>
 #include "defs.h"
 
 // Contains code for calling/stubbing functions
-
-#define MAX_STUBS 64
-static struct stub {
-    int valid;
-    astro_t *astro;
-    void *user_data;
-    astro_stub_impl_t impl;
-    uc_hook hook;
-} stubs[MAX_STUBS];
 
 // Register used for return value
 #define ARG_REG_RET UC_X86_REG_RAX
@@ -23,6 +15,48 @@ static const int ARG_REGS[] = {
     UC_X86_REG_R9,
 };
 
+const astro_err_t *astro_mock_func(astro_t *astro, const char *func_name,
+                                   const char *mock_func_name) {
+    size_t mock_funcs_len = sizeof astro->mock_funcs / sizeof astro->mock_funcs[0];
+    for (unsigned int i = 0; i < mock_funcs_len; i++) {
+        if (!astro->mock_funcs[i].func_name &&
+                !astro->mock_funcs[i].mock_func_name) {
+            astro->mock_funcs[i].func_name = func_name;
+            astro->mock_funcs[i].mock_func_name = mock_func_name;
+            return NULL;
+        }
+    }
+
+    return astro_errorf(astro, "Out of mock functions! Used %lu/%lu",
+                        mock_funcs_len, mock_funcs_len);
+}
+
+// Look up a function's address, accounting for mock functions
+static const astro_err_t *_func_addr(astro_t *astro, const char *name,
+                                     uint64_t *func_addr_out) {
+    size_t mock_funcs_len = sizeof astro->mock_funcs / sizeof astro->mock_funcs[0];
+    for (unsigned int i = 0; i < mock_funcs_len; i++) {
+        if (astro->mock_funcs[i].func_name &&
+                astro->mock_funcs[i].mock_func_name &&
+                !strcmp(astro->mock_funcs[i].func_name, name)) {
+            name = astro->mock_funcs[i].mock_func_name;
+            break;
+        }
+    }
+
+    const astro_err_t *astro_err;
+
+    if (!astro_get_symbol_addr(astro, name, func_addr_out)) {
+        astro_err = astro_errorf(astro, "cannot find symbol `%s'", name);
+        goto failure;
+    }
+
+    return NULL;
+
+    failure:
+    return astro_err;
+}
+
 const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
                                        const char *name, ...) {
     const astro_err_t *astro_err;
@@ -34,10 +68,8 @@ const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
     }
 
     uint64_t func_addr;
-    if (!astro_get_symbol_addr(astro, name, &func_addr)) {
-        astro_err = astro_errorf(astro, "cannot find symbol `%s'", name);
+    if (astro_err = _func_addr(astro, name, &func_addr))
         goto failure;
-    }
 
     // at the entry point, there's a halt instruction which
     // stops the simulation
@@ -338,7 +370,7 @@ static void stub_hook_callback(uc_engine *uc, uint64_t addr, uint32_t size,
     (void)addr;
     (void)size;
 
-    struct stub *stub = user_data;
+    stub_t *stub = user_data;
     stub->astro->sim_state = ASTRO_SIM_STUB;
     stub->impl(stub->astro, stub->user_data);
     stub->astro->sim_state = ASTRO_SIM_EXEC;
@@ -393,16 +425,17 @@ const astro_err_t *astro_stub_setup(astro_t *astro, void *user_data,
         goto failure;
     }
 
-    int i = 0;
-    for (; i < MAX_STUBS && stubs[i].valid; i++);
+    unsigned int i = 0;
+    size_t max_stubs = sizeof astro->stubs / sizeof astro->stubs[0];
+    for (; i < max_stubs && astro->stubs[i].valid; i++);
 
-    if (i == MAX_STUBS) {
-        astro_err = astro_errorf(astro, "max number of stubs %d reached, "
-                                 "can't create stub", MAX_STUBS);
+    if (i == max_stubs) {
+        astro_err = astro_errorf(astro, "max number of stubs %u reached, "
+                                        "can't create stub", max_stubs);
         goto failure;
     }
 
-    struct stub *stub = &stubs[i];
+    stub_t *stub = &astro->stubs[i];
     stub->valid = 1;
     stub->astro = astro;
     stub->user_data = user_data;

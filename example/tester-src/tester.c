@@ -65,3 +65,12 @@ const astro_err_t *tester_run_test(tester_t *tester, test_t *test) {
     astro_free(astro);
     return astro_err;
 }
+
+const astro_err_t *tester_run_all_tests(tester_t *tester) {
+    for (unsigned int i = 0; i < tester->tests_count; i++) {
+        const astro_err_t *astro_err;
+        if ((astro_err = tester_run_test(tester, &tester->tests[i])))
+            return astro_err;
+    }
+    return NULL;
+}

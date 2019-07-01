@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <astro.h>
 
 typedef struct test test_t;
@@ -25,9 +26,9 @@ typedef struct {
 } tester_t;
 
 #define TEST_START(test_name, test_description) \
-    static const astro_err_t *test_name(test_t *__test, astro_t *__astro); \
-    static test_t _ ## test_name = { #test_name, test_description, test_name }; \
-    static const astro_err_t *test_name(test_t *__test, astro_t *__astro) { \
+    const astro_err_t *test_name(test_t *__test, astro_t *__astro); \
+    test_t _ ## test_name = { #test_name, test_description, test_name }; \
+    const astro_err_t *test_name(test_t *__test, astro_t *__astro) { \
         (void)__test; \
         (void)__astro;
 #define TEST_END \
@@ -83,6 +84,25 @@ typedef struct {
     (actual_size == (size)); \
 })
 
+#define test_assert_malloced_block(ptr, size, message) ({ \
+    if (astro_is_freed_block(__astro, (ptr))) \
+        __assertion_failure("address 0x%lx points to a freed heap block " \
+                            "instead of a malloc()d heap block", (ptr)) \
+    if (!astro_is_malloced_block(__astro, (ptr))) \
+        __assertion_failure("address 0x%lx does not point to a malloc()d " \
+                            "heap block", (ptr)) \
+    \
+    uint64_t actual_size; \
+    const astro_err_t *astro_err; \
+    if ((astro_err = astro_malloced_block_size(__astro, (ptr), &actual_size))) \
+        return astro_err; \
+    \
+    if ((actual_size) != (size)) \
+        __assertion_failure("heap block at address 0x%lx has incorrect size " \
+                            "%lu instead of expected size %lu", (ptr), \
+                            (actual_size), (size)); \
+})
+
 // This is a gcc extension, "statement expressions"
 #define test_call(func_name, ...) ({ \
     const astro_err_t *astro_err; \
@@ -93,16 +113,14 @@ typedef struct {
     ret; \
 })
 
+// TODO: what if this is too big for the stack?
 #define test_read_mem(ptr, size) ({ \
-    void *block = malloc((size)); \
-    if (!block) \
-        return astro_perror(__astro, "malloc"); \
-    \
+    uint8_t mem[(size)]; \
     const astro_err_t *astro_err; \
-    if ((astro_err = astro_read_mem(__astro, (ptr), (size), block))) \
+    if ((astro_err = astro_read_mem(__astro, (ptr), (size), (uint64_t *) mem))) \
         return astro_err; \
     \
-    block; \
+    (void *) mem; \
 })
 
 #define tester_push(tester, test_name) \
@@ -113,5 +131,32 @@ extern void tester_free(tester_t *);
 extern void _tester_push(tester_t *, test_t *test);
 extern test_t *tester_get_test(tester_t *tester, const char *test_name);
 extern const astro_err_t *tester_run_test(tester_t *tester, test_t *test);
+extern const astro_err_t *tester_run_all_tests(tester_t *tester);
+
+//// meta testing functions/macros ////
+
+#define meta_test_mock_func(func_name, mock_func_name) ({ \
+    const astro_err_t *astro_err; \
+    if ((astro_err = astro_mock_func(__astro, #func_name, #mock_func_name))) \
+        return astro_err; \
+})
+
+// This is a hack to write tests of tests without a pointer to the tester_t.
+// We can abuse the linker to call other tests.
+#define meta_test_run_test(test_name) ({ \
+    extern const astro_err_t *test_name(test_t *, astro_t *); \
+    extern test_t _ ## test_name; \
+    test_name(&_ ## test_name, __astro); \
+})
+
+#define meta_test_assert_err_contains(substr, astro_err, message) ({ \
+    if (!(astro_err)) \
+        __assertion_failure("expected an error but got NULL"); \
+    \
+    if (!strstr((astro_err)->msg, (substr))) \
+        __assertion_failure("error message `%s' does not contain expected " \
+                            "substring `%s'. %s", \
+                            (astro_err)->msg, (substr), (message)); \
+})
 
 #endif
