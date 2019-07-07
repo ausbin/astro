@@ -32,7 +32,11 @@ list_t *list_new__stack(void) {
     return list_p;
 }
 
-list_t *list_new__static(void) {
+list_t *list_new__readonly_static(void) {
+    return (list_t *) "where are my pancakes thomas";
+}
+
+list_t *list_new__writable_static(void) {
     static list_t list = { .size = 0, .head = NULL };
     return &list;
 }

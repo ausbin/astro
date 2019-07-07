@@ -86,7 +86,7 @@ const astro_err_t *astro_load_sections(astro_t *astro) {
         }
 
         if (strcmp(section_name, ".text") &&
-            strcmp(section_name, ".data") &&
+            strcmp(section_name, ".rodata") &&
             strcmp(section_name, ".bss"))
             continue;
 
@@ -98,17 +98,26 @@ const astro_err_t *astro_load_sections(astro_t *astro) {
         }
 
         uint32_t perms;
+        addr_range_t *addr_range;
 
-        if (!strcmp(section_name, ".text"))
+        if (!strcmp(section_name, ".text")) {
             perms = UC_PROT_READ | UC_PROT_EXEC;
-        else if (!strcmp(section_name, ".data") || !strcmp(section_name, ".bss"))
+            addr_range = &astro->mem_ctx.text_range;
+        } else if (!strcmp(section_name, ".rodata")) {
+            perms = UC_PROT_READ;
+            addr_range = &astro->mem_ctx.rodata_range;
+        } else if (!strcmp(section_name, ".bss")) {
             perms = UC_PROT_READ | UC_PROT_WRITE;
-        else {
+            addr_range = &astro->mem_ctx.bss_range;
+        } else {
             astro_err = astro_errorf(astro, "unrecognized section `%s'", section_name);
             goto failure;
         }
 
         uint64_t length_rounded = ROUND_TO_4K(shdr.sh_size);
+
+        addr_range->low_addr = shdr.sh_addr;
+        addr_range->high_addr = shdr.sh_addr + length_rounded;
 
         if (err = uc_mem_map(astro->uc, shdr.sh_addr, length_rounded, perms)) {
             astro_err = astro_errorf(astro, "uc_mem_map section %s: %s",

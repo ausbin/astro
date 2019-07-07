@@ -77,7 +77,7 @@ const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
     if (astro_err = astro_get_entry_point_addr(astro, &return_address))
         goto failure;
 
-    uint64_t stack_bottom = astro->mem_ctx.stack_end - 8;
+    uint64_t stack_bottom = astro->mem_ctx.stack_range.high_addr - 8;
 
     if (err = uc_mem_write(astro->uc, stack_bottom, &return_address, 8)) {
         astro_err = astro_uc_perror(astro, "uc_mem_write return address", err);

@@ -46,20 +46,29 @@ TEST_START(meta_test_list_new__stack,
                                   "return pointer to stack");
 } TEST_END
 
-TEST_START(meta_test_list_new__static,
-           "test_list_new catches pointer to static memory") {
-    meta_test_mock_func(list_new, list_new__static);
+TEST_START(meta_test_list_new__writable_static,
+           "test_list_new catches pointer to r/w static memory") {
+    meta_test_mock_func(list_new, list_new__writable_static);
     const astro_err_t *astro_err = meta_test_run_test(test_list_new);
-    meta_test_assert_err_contains("static", astro_err,
+    meta_test_assert_err_contains("writable static", astro_err,
                                   "Tester should tell students not to "
-                                  "return pointer to static memory");
+                                  "return pointer to r/w static memory");
+} TEST_END
+
+TEST_START(meta_test_list_new__readonly_static,
+           "test_list_new catches pointer to r/o static memory") {
+    meta_test_mock_func(list_new, list_new__readonly_static);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_new);
+    meta_test_assert_err_contains("read-only static", astro_err,
+                                  "Tester should tell students not to "
+                                  "return pointer to r/o static memory");
 } TEST_END
 
 TEST_START(meta_test_list_new__stray_heap,
            "test_list_new catches pointer to middle of heap block") {
     meta_test_mock_func(list_new, list_new__stray_heap);
     const astro_err_t *astro_err = meta_test_run_test(test_list_new);
-    meta_test_assert_err_contains("idk", astro_err,
+    meta_test_assert_err_contains("does not point to the beginning", astro_err,
                                   "Tester should tell students not to "
                                   "return pointer to middle of heap block");
 } TEST_END
@@ -97,7 +106,8 @@ void add_meta_list_suite(tester_t *tester) {
     tester_push(tester, meta_test_list_new__doubly_freed);
     tester_push(tester, meta_test_list_new__uninit);
     tester_push(tester, meta_test_list_new__stack);
-    tester_push(tester, meta_test_list_new__static);
+    tester_push(tester, meta_test_list_new__writable_static);
+    tester_push(tester, meta_test_list_new__readonly_static);
     tester_push(tester, meta_test_list_new__stray_heap);
     tester_push(tester, meta_test_list_new__undersized);
     tester_push(tester, meta_test_list_new__oversized);

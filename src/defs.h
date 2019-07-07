@@ -40,12 +40,18 @@ typedef struct heap_block {
 } heap_block_t;
 
 typedef struct {
-    uint64_t heap_start;
-    uint64_t heap_end;
-    // min mapped stack address
-    uint64_t stack_start;
-    // max mapped stack address + 1
-    uint64_t stack_end;
+    uint64_t low_addr;
+    uint64_t high_addr;
+} addr_range_t;
+
+typedef struct {
+    addr_range_t text_range;
+    addr_range_t rodata_range;
+    addr_range_t bss_range;
+    addr_range_t heap_range;
+    // (min mapped stack address, max mapped stack address + 1)
+    addr_range_t stack_range;
+
     uc_hook stack_hook;
     heap_block_t *heap_blocks;
 } mem_ctx_t;

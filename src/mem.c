@@ -14,14 +14,14 @@ const astro_err_t *astro_grow_stack(astro_t *astro) {
     const astro_err_t *astro_err = NULL;
     uc_err err;
 
-    astro->mem_ctx.stack_start -= 0x1000;
+    astro->mem_ctx.stack_range.low_addr -= 0x1000;
 
-    if (err = uc_mem_map(astro->uc, astro->mem_ctx.stack_start, 0x1000,
-                         UC_PROT_READ | UC_PROT_WRITE)) {
+    if (err = uc_mem_map(astro->uc, astro->mem_ctx.stack_range.low_addr,
+                         0x1000, UC_PROT_READ | UC_PROT_WRITE)) {
         astro_err = astro_uc_perror(astro, "uc_mem_map stack", err);
         goto failure;
     }
-    if (err = uc_mem_write(astro->uc, astro->mem_ctx.stack_start,
+    if (err = uc_mem_write(astro->uc, astro->mem_ctx.stack_range.low_addr,
                            four_kb_of_uninit, 0x1000)) {
         astro_err = astro_uc_perror(astro, "uc_mem_write stack", err);
         goto failure;
@@ -39,10 +39,10 @@ int astro_is_access_within_stack_growth_region(astro_t *astro,
                                                uint64_t addr,
                                                uint64_t size) {
     uint64_t end_addr = addr + size - 1;
-    return addr >= astro->mem_ctx.stack_start - 0x1000 &&
-           addr <= astro->mem_ctx.stack_start - 1 &&
-           end_addr >= astro->mem_ctx.stack_start - 0x1000 &&
-           end_addr <= astro->mem_ctx.stack_start - 1;
+    return addr >= astro->mem_ctx.stack_range.low_addr - 0x1000 &&
+           addr < astro->mem_ctx.stack_range.low_addr &&
+           end_addr >= astro->mem_ctx.stack_range.low_addr - 0x1000 &&
+           end_addr < astro->mem_ctx.stack_range.low_addr;
 }
 
 // sbrk(), basically
@@ -53,15 +53,15 @@ static const astro_err_t *mem_ctx_grow_heap(astro_t *astro, uint64_t size,
     heap_block_t *new_block = NULL;
     uint64_t size_rounded = ROUND_TO_4K(size + 2*HEAP_BLOCK_PADDING);
 
-    if (err = uc_mem_map(astro->uc, astro->mem_ctx.heap_end, size_rounded,
-                         UC_PROT_READ | UC_PROT_WRITE)) {
+    if (err = uc_mem_map(astro->uc, astro->mem_ctx.heap_range.high_addr,
+                         size_rounded, UC_PROT_READ | UC_PROT_WRITE)) {
         astro_err = astro_uc_perror(astro, "uc_mem_map heap space", err);
         goto failure;
     }
 
     // Initialize memory
-    for (uint64_t a = astro->mem_ctx.heap_end;
-         a < astro->mem_ctx.heap_end + size_rounded;
+    for (uint64_t a = astro->mem_ctx.heap_range.high_addr;
+         a < astro->mem_ctx.heap_range.high_addr + size_rounded;
          a += 0x1000) {
         if (err = uc_mem_write(astro->uc, a, four_kb_of_uninit, 0x1000)) {
             astro_err = astro_uc_perror(astro,
@@ -77,7 +77,7 @@ static const astro_err_t *mem_ctx_grow_heap(astro_t *astro, uint64_t size,
         goto failure;
     }
 
-    new_block->addr = astro->mem_ctx.heap_end;
+    new_block->addr = astro->mem_ctx.heap_range.high_addr;
     new_block->size = size_rounded - 2*HEAP_BLOCK_PADDING;
     new_block->state = UNTOUCHED;
     new_block->next = NULL;
@@ -90,7 +90,7 @@ static const astro_err_t *mem_ctx_grow_heap(astro_t *astro, uint64_t size,
     else
         tail->next = new_block;
 
-    astro->mem_ctx.heap_end += size_rounded;
+    astro->mem_ctx.heap_range.high_addr += size_rounded;
 
     *block_out = new_block;
     return NULL;
@@ -436,16 +436,16 @@ const astro_err_t *astro_mem_ctx_setup(astro_t *astro) {
     // Now, need to setup stack and heap -- allocate 8K for each
     // Put heap right where __heap_start is (from linker script)
     if (!astro_get_symbol_addr(astro, HEAP_START_SYMBOL,
-                               &astro->mem_ctx.heap_start)) {
+                               &astro->mem_ctx.heap_range.low_addr)) {
         astro_err = astro_errorf(astro, "where is my " HEAP_START_SYMBOL " symbol?");
         goto failure;
     }
     // zero-length heap for now
-    astro->mem_ctx.heap_end = astro->mem_ctx.heap_start;
+    astro->mem_ctx.heap_range.high_addr = astro->mem_ctx.heap_range.low_addr;
 
     // Start with a cute little 4K stack
-    astro->mem_ctx.stack_end = STACK_HIGH;
-    astro->mem_ctx.stack_start = STACK_HIGH;
+    astro->mem_ctx.stack_range.low_addr = STACK_HIGH;
+    astro->mem_ctx.stack_range.high_addr = STACK_HIGH;
 
     // now setup stack
     if (astro_err = astro_grow_stack(astro))
@@ -511,6 +511,22 @@ bool astro_is_malloced_block(astro_t *astro, uint64_t addr) {
     heap_block_t *match = NULL;
     mem_ctx_heap_find_block(astro, addr, NULL, &match);
     return match && match->state == MALLOCED;
+}
+
+static bool in_addr_range(const addr_range_t *range, uint64_t addr) {
+    return range->low_addr <= addr && addr < range->high_addr;
+}
+
+bool astro_is_stack_pointer(astro_t *astro, uint64_t addr) {
+    return in_addr_range(&astro->mem_ctx.stack_range, addr);
+}
+
+bool astro_is_rw_static_pointer(astro_t *astro, uint64_t addr) {
+    return in_addr_range(&astro->mem_ctx.bss_range, addr);
+}
+
+bool astro_is_ro_static_pointer(astro_t *astro, uint64_t addr) {
+    return in_addr_range(&astro->mem_ctx.rodata_range, addr);
 }
 
 const astro_err_t *astro_malloced_block_size(astro_t *astro, uint64_t addr,

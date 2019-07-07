@@ -91,14 +91,29 @@ typedef struct {
 })
 
 #define test_assert_malloced_block(ptr, size, message) ({ \
+    if (astro_is_stack_pointer(__astro, (ptr))) \
+        __assertion_failure((message), \
+                            "address 0x%lx points to the stack (for " \
+                            "example, a local variable) instead of a " \
+                            "malloc()d heap block", (ptr)) \
+    if (astro_is_rw_static_pointer(__astro, (ptr))) \
+        __assertion_failure((message), \
+                            "address 0x%lx points to writable static memory " \
+                            "(for example, a global variable) instead of a " \
+                            "malloc()d heap block", (ptr)) \
+    if (astro_is_ro_static_pointer(__astro, (ptr))) \
+        __assertion_failure((message), \
+                            "address 0x%lx points to read-only static " \
+                            "memory (for example, a string literal) instead " \
+                            "of a malloc()d heap block", (ptr)) \
     if (astro_is_freed_block(__astro, (ptr))) \
         __assertion_failure((message), \
                             "address 0x%lx points to a freed heap block " \
                             "instead of a malloc()d heap block", (ptr)) \
     if (!astro_is_malloced_block(__astro, (ptr))) \
         __assertion_failure((message), \
-                            "address 0x%lx does not point to a malloc()d " \
-                            "heap block", (ptr)) \
+                            "address 0x%lx does not point to the beginning " \
+                            "of a malloc()d heap block", (ptr)) \
     \
     uint64_t actual_size; \
     const astro_err_t *astro_err; \

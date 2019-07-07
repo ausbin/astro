@@ -52,6 +52,9 @@ extern const astro_err_t *astro_read_mem(astro_t *astro, uint64_t addr,
                                          size_t size, uint64_t *out);
 extern bool astro_is_freed_block(astro_t *astro, uint64_t addr);
 extern bool astro_is_malloced_block(astro_t *astro, uint64_t addr);
+extern bool astro_is_stack_pointer(astro_t *astro, uint64_t addr);
+extern bool astro_is_rw_static_pointer(astro_t *astro, uint64_t addr);
+extern bool astro_is_ro_static_pointer(astro_t *astro, uint64_t addr);
 extern const astro_err_t *astro_malloced_block_size(astro_t *astro,
                                                     uint64_t addr,
                                                     size_t *out);
