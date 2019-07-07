@@ -42,7 +42,11 @@ list_t *list_new__stray_heap(void) {
 }
 
 list_t *list_new__undersized(void) {
-    return malloc(1);
+    return calloc(1, 1);
+}
+
+list_t *list_new__oversized(void) {
+    return calloc(1, sizeof (list_t) + 1);
 }
 
 list_t *list_new__leak(void) {

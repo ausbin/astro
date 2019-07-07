@@ -9,10 +9,13 @@ static void print_usage(const char *prog) {
     // TODO: print available tests
 }
 
-static int run_test(tester_t *tester, test_t *test) {
+static int run_test(tester_t *tester, test_t *test, int blank_line) {
     const astro_err_t *astro_err = tester_run_test(tester, test);
-    if (astro_err)
+    if (astro_err) {
+        if (blank_line)
+            printf("\n");
         astro_print_err(stderr, astro_err);
+    }
     return !!astro_err;
 }
 
@@ -38,11 +41,11 @@ int main(int argc, char **argv) {
             fprintf(stderr, "error: unknown test `%s'\n", argv[1]);
             exit_code = 1;
         }
-        exit_code = run_test(tester, test);
+        exit_code = run_test(tester, test, 0);
     } else {
         for (unsigned int i = 0; i < tester->tests_count; i++) {
             test_t *test = &tester->tests[i];
-            exit_code = exit_code || run_test(tester, test);
+            exit_code = run_test(tester, test, exit_code) || exit_code;
         }
     }
 

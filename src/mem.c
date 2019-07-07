@@ -189,7 +189,7 @@ static const astro_err_t *mem_ctx_heap_free(astro_t *astro, uint64_t addr) {
 
     if (!match) {
         // TODO: this error message is garbage
-        astro_err = astro_errorf(astro, "free()ing garbage pointer 0x%lx!\n",
+        astro_err = astro_errorf(astro, "free()ing garbage pointer 0x%lx!",
                                  addr);
         goto failure;
     }
@@ -197,13 +197,13 @@ static const astro_err_t *mem_ctx_heap_free(astro_t *astro, uint64_t addr) {
     if (match->state == FREED) {
         // TODO: this error message is garbage
         // TODO: not necessarily a double free
-        astro_err = astro_errorf(astro, "Double free() of address 0x%lx!\n",
+        astro_err = astro_errorf(astro, "Double free() of address 0x%lx!",
                                  addr);
         goto failure;
     } else if (match->state == UNTOUCHED) {
         astro_err = astro_errorf(astro, "free()ing a pointer 0x%lx not yet "
                                         "returned by malloc()! Are you a time "
-                                        "traveller?\n", addr);
+                                        "traveller?", addr);
         goto failure;
     }
 

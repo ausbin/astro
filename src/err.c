@@ -153,3 +153,29 @@ const char *astro_intern_str(astro_t *astro, const char *src) {
         return ret;
     }
 }
+
+void astro_escape_str(const char *in, char *out) {
+    if (!in || !out)
+        return;
+
+    while (*in) {
+        switch (*in) {
+            case '\n':
+            *out++ = '\\';
+            *out++ = 'n';
+            break;
+
+            case '\t':
+            *out++ = '\\';
+            *out++ = 't';
+            break;
+
+            default:
+            *out++ = *in;
+        }
+
+        in++;
+    }
+
+    *out = '\0';
+}

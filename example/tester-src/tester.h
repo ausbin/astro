@@ -35,12 +35,14 @@ typedef struct {
         return NULL; \
     }
 
-#define __assertion_failure(format_str, ...) \
+#define __assertion_failure(message, format_str, ...) \
     return astro_errorf(__astro, \
                         "Assertion failure in %s at %s:%d. %s\n\tFailing " \
-                        "condition: " format_str, \
+                        "condition: " format_str "\n\tFailing condition " \
+                        "description: %s", \
                         __test->name, __FILE__, __LINE__, \
-                        __test->description, ##__VA_ARGS__);
+                        __test->description, ##__VA_ARGS__, \
+                        (message));
 
 #define test_assert(cond, message) \
     if (!(cond)) \
@@ -50,27 +52,31 @@ typedef struct {
     uint64_t _expected = (expected); \
     uint64_t _actual = (actual); \
     if ((expected) != (actual)) \
-        __assertion_failure("expected value %lu, got %lu. %s", \
-                            (_expected), (_actual), (message)); \
+        __assertion_failure((message), \
+                            "expected value %lu, got %lu", \
+                            (_expected), (_actual)); \
 })
 
 #define test_assert_uint_not_equals(unexpected, actual, message) ({ \
     uint64_t _unexpected = (unexpected); \
     uint64_t _actual = (actual); \
     if ((expected) != (actual)) \
-        __assertion_failure("value was %lu, which is incorrect. %s", \
-                            (_unexpected), (message)); \
+        __assertion_failure((message), \
+                            "value was %lu, which is incorrect", \
+                            (_unexpected)); \
 })
 
 #define test_assert_addr_equals(expected, actual, message) \
     if ((expected) != (actual)) \
-        __assertion_failure("expected address 0x%lx, got 0x%lx. %s", \
-                            (expected), (actual), (message));
+        __assertion_failure((message), \
+                            "expected address 0x%lx, got 0x%lx", \
+                            (expected), (actual));
 
 #define test_assert_addr_not_equals(unexpected, actual, message) \
     if ((unexpected) == (actual)) \
-        __assertion_failure("address was 0x%lx, which is incorrect. %s", \
-                            (unexpected), (message));
+        __assertion_failure((message), \
+                            "address was 0x%lx, which is incorrect", \
+                            (unexpected));
 
 #define test_is_malloced_block(ptr, size) ({ \
     if (!astro_is_malloced_block(__astro, (ptr))) \
@@ -86,10 +92,12 @@ typedef struct {
 
 #define test_assert_malloced_block(ptr, size, message) ({ \
     if (astro_is_freed_block(__astro, (ptr))) \
-        __assertion_failure("address 0x%lx points to a freed heap block " \
+        __assertion_failure((message), \
+                            "address 0x%lx points to a freed heap block " \
                             "instead of a malloc()d heap block", (ptr)) \
     if (!astro_is_malloced_block(__astro, (ptr))) \
-        __assertion_failure("address 0x%lx does not point to a malloc()d " \
+        __assertion_failure((message), \
+                            "address 0x%lx does not point to a malloc()d " \
                             "heap block", (ptr)) \
     \
     uint64_t actual_size; \
@@ -98,7 +106,8 @@ typedef struct {
         return astro_err; \
     \
     if ((actual_size) != (size)) \
-        __assertion_failure("heap block at address 0x%lx has incorrect size " \
+        __assertion_failure((message), \
+                            "heap block at address 0x%lx has incorrect size " \
                             "%lu instead of expected size %lu", (ptr), \
                             (actual_size), (size)); \
 })
@@ -151,12 +160,16 @@ extern const astro_err_t *tester_run_all_tests(tester_t *tester);
 
 #define meta_test_assert_err_contains(substr, astro_err, message) ({ \
     if (!(astro_err)) \
-        __assertion_failure("expected an error but got NULL"); \
+        __assertion_failure((message), "expected an error but got NULL"); \
     \
-    if (!strstr((astro_err)->msg, (substr))) \
-        __assertion_failure("error message `%s' does not contain expected " \
-                            "substring `%s'. %s", \
-                            (astro_err)->msg, (substr), (message)); \
+    if (!strstr((astro_err)->msg, (substr))) { \
+        char buf[2 * strlen((astro_err)->msg) + 1]; \
+        astro_escape_str((astro_err)->msg, buf); \
+        __assertion_failure((message), \
+                            "expected substring `%s' not found in error " \
+                            "message `%s'", \
+                            (substr), buf); \
+    } \
 })
 
 #endif
