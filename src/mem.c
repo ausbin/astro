@@ -540,3 +540,25 @@ const astro_err_t *astro_malloced_block_size(astro_t *astro, uint64_t addr,
     if (out) *out = match->size;
     return NULL;
 }
+
+void astro_heap_iterate(astro_t *astro, astro_heap_iterator_t *iter_mem) {
+    if (!astro || !iter_mem)
+        return;
+
+    iter_mem->next = astro->mem_ctx.heap_blocks;
+}
+
+const astro_heap_block_t *astro_heap_iterate_next(astro_heap_iterator_t *iter) {
+    // User should only see currently malloced blocks
+    while (iter->next && iter->next->state != MALLOCED)
+        iter->next = iter->next->next;
+
+    if (!iter->next)
+        return NULL;
+
+    iter->block_mem.addr = iter->next->addr + HEAP_BLOCK_PADDING;
+    iter->block_mem.size = iter->next->size;
+    iter->next = iter->next->next;
+
+    return &iter->block_mem;
+}

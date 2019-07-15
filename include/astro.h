@@ -48,6 +48,20 @@ extern const astro_err_t *astro_stub_ret(astro_t *astro, uint64_t retval);
 extern void astro_stub_die(astro_t *astro, const astro_err_t *astro_err);
 
 // mem.c
+typedef struct {
+    uint64_t addr;
+    uint64_t size;
+} astro_heap_block_t;
+
+struct astro_heap_iterator {
+    // pointer to internal block
+    const struct _astro_heap_block *next;
+    // memory used for block user toys around with
+    astro_heap_block_t block_mem;
+};
+
+typedef struct astro_heap_iterator astro_heap_iterator_t;
+
 extern const astro_err_t *astro_read_mem(astro_t *astro, uint64_t addr,
                                          size_t size, uint64_t *out);
 extern bool astro_is_freed_block(astro_t *astro, uint64_t addr);
@@ -58,6 +72,8 @@ extern bool astro_is_ro_static_pointer(astro_t *astro, uint64_t addr);
 extern const astro_err_t *astro_malloced_block_size(astro_t *astro,
                                                     uint64_t addr,
                                                     size_t *out);
-
+extern void astro_heap_iterate(astro_t *astro, astro_heap_iterator_t *iter_mem);
+extern const astro_heap_block_t *astro_heap_iterate_next(
+        astro_heap_iterator_t *iter_mem);
 
 #endif

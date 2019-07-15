@@ -29,13 +29,13 @@ typedef enum {
     MALLOCED
 } heap_block_state_t;
 
-typedef struct heap_block {
+typedef struct _astro_heap_block {
     // pointer to beginning of padding
     uint64_t addr;
     // does not include padding
     uint64_t size;
     heap_block_state_t state;
-    struct heap_block *next;
+    struct _astro_heap_block *next;
     uc_hook access_hook;
 } heap_block_t;
 

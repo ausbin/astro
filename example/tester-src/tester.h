@@ -6,6 +6,8 @@
 #include <string.h>
 #include <astro.h>
 
+#define CMP(left, right) (((left) > (right)) ? 1 : ((left) < (right))? -1 : 0)
+
 typedef struct test test_t;
 
 typedef const astro_err_t *(*tester_func_t)(test_t *, astro_t *);
@@ -24,6 +26,12 @@ typedef struct {
     unsigned int tests_cap;
     test_t *tests;
 } tester_t;
+
+typedef struct {
+    uint64_t addr;
+    //size_t size;
+    const char *description;
+} _tester_heap_state_t;
 
 #define TEST_START(test_name, test_description) \
     const astro_err_t *test_name(test_t *__test, astro_t *__astro); \
@@ -127,6 +135,20 @@ typedef struct {
                             (actual_size), (size)); \
 })
 
+#define test_assert_heap_state(message, ...) ({ \
+    _tester_heap_state_t heap_state_args[] = {__VA_ARGS__}; \
+    size_t total_blocks = sizeof heap_state_args / \
+                          sizeof (_tester_heap_state_t); \
+    char errmsg[2048]; \
+    if (!_tester_assert_heap_state(__astro, heap_state_args, total_blocks, \
+                                   errmsg, sizeof errmsg)) { \
+        __assertion_failure((message), \
+                            "found unexpected blocks on the heap. " \
+                            "this could indicate a memory leak! list of " \
+                            "unknown blocks:\n%s", errmsg); \
+    } \
+})
+
 // This is a gcc extension, "statement expressions"
 #define test_call(func_name, ...) ({ \
     const astro_err_t *astro_err; \
@@ -156,6 +178,10 @@ extern void _tester_push(tester_t *, test_t *test);
 extern test_t *tester_get_test(tester_t *tester, const char *test_name);
 extern const astro_err_t *tester_run_test(tester_t *tester, test_t *test);
 extern const astro_err_t *tester_run_all_tests(tester_t *tester);
+extern bool _tester_assert_heap_state(astro_t *astro,
+                                      _tester_heap_state_t *heap_state_args,
+                                      size_t total_blocks, char *errmsg_out,
+                                      size_t errmsg_size);
 
 //// meta testing functions/macros ////
 

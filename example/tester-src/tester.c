@@ -41,6 +41,54 @@ void _tester_push(tester_t *tester, test_t *test) {
     tester->tests_count++;
 }
 
+static int _tester_compare_heap_state(const void *left, const void *right) {
+    const _tester_heap_state_t *left_block = left;
+    const _tester_heap_state_t *right_block = right;
+
+    return CMP(left_block->addr, right_block->addr);
+}
+
+// errmsg_size must be >= 3
+bool _tester_assert_heap_state(astro_t *astro,
+                               _tester_heap_state_t *heap_state_args,
+                               size_t total_blocks, char *errmsg_out,
+                               size_t errmsg_size) {
+    qsort(heap_state_args, total_blocks, sizeof (_tester_heap_state_t),
+          _tester_compare_heap_state);
+
+    bool ok = true;
+    astro_heap_iterator_t iter;
+    astro_heap_iterate(astro, &iter);
+
+    const astro_heap_block_t *block;
+    while ((block = astro_heap_iterate_next(&iter))) {
+        _tester_heap_state_t desired = { .addr = block->addr };
+        _tester_heap_state_t *expected_block = bsearch(
+                &desired, heap_state_args, total_blocks,
+                sizeof (_tester_heap_state_t), _tester_compare_heap_state);
+
+        if (!expected_block) {
+            ok = false;
+
+            int n;
+            if ((n = snprintf(errmsg_out, errmsg_size,
+                              "\t* address: 0x%lx, size: %lu bytes\n",
+                              block->addr, block->size)) >= (int)errmsg_size) {
+                for (int i = 0; i < 3; i++)
+                    errmsg_out[errmsg_size - 1 - i] = '.';
+
+                // Out of memory, so no point in continuining
+                break;
+            }
+
+            errmsg_out += n + 1;
+            errmsg_size -= n + 1;
+        }
+    }
+
+    return ok;
+}
+
 test_t *tester_get_test(tester_t *tester, const char *test_name) {
     for (unsigned int i = 0; i < tester->tests_count; i++)
         if (!strcmp(test_name, tester->tests[i].name))

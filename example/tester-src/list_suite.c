@@ -17,7 +17,8 @@ TEST_START(test_list_new,
                             "list_new() should return a list with size 0");
     test_assert(list->head == NULL, "list_new() should return a list with a "
                                     "NULL head pointer");
-    //test_assert_heap_state(list_addr, sizeof (list_t), "list_t struct");
+    test_assert_heap_state("list_new() should not leak memory",
+                           {list_addr, "list_t struct"});
 } TEST_END
 
 void add_list_suite(tester_t *tester) {
