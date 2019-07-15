@@ -102,6 +102,15 @@ static const astro_err_t *mem_ctx_grow_heap(astro_t *astro, uint64_t size,
 
 static const astro_err_t *mem_ctx_heap_malloc(astro_t *astro, uint64_t size,
                                               uint64_t *addr_out) {
+    if (astro->mem_ctx.mallocs_until_fail >= 0) {
+        if (!astro->mem_ctx.mallocs_until_fail) {
+            *addr_out = 0;
+            return NULL;
+        } else {
+            astro->mem_ctx.mallocs_until_fail--;
+        }
+    }
+
     const astro_err_t *astro_err;
     heap_block_t *exact_match = NULL;
     heap_block_t *split_match = NULL;
@@ -232,13 +241,15 @@ static const astro_err_t *mem_ctx_heap_calloc(astro_t *astro,
     if (astro_err = mem_ctx_heap_malloc(astro, total_size, &addr))
         goto failure;
 
-    // Zero out the block 4K at a time
-    for (uint64_t a = addr; a < addr + total_size; a += 0x1000) {
-        uint64_t n = MIN(addr + total_size - a, 0x1000);
+    if (addr) {
+        // Zero out the block 4K at a time
+        for (uint64_t a = addr; a < addr + total_size; a += 0x1000) {
+            uint64_t n = MIN(addr + total_size - a, 0x1000);
 
-        if (err = uc_mem_write(astro->uc, a, four_kb_of_zeros, n)) {
-            astro_err = astro_uc_perror(astro, "uc_mem_write calloc", err);
-            goto failure;
+            if (err = uc_mem_write(astro->uc, a, four_kb_of_zeros, n)) {
+                astro_err = astro_uc_perror(astro, "uc_mem_write calloc", err);
+                goto failure;
+            }
         }
     }
 
@@ -452,6 +463,7 @@ const astro_err_t *astro_mem_ctx_setup(astro_t *astro) {
         goto failure;
 
     astro->mem_ctx.heap_blocks = NULL;
+    astro->mem_ctx.mallocs_until_fail = -1;
 
     // Setup malloc(), calloc(), realloc(), free() stubs
     #define SETUP_MALLOC_STUB(name) \
@@ -561,4 +573,11 @@ const astro_heap_block_t *astro_heap_iterate_next(astro_heap_iterator_t *iter) {
     iter->next = iter->next->next;
 
     return &iter->block_mem;
+}
+
+void astro_set_mallocs_until_fail(astro_t *astro, int mallocs_until_fail) {
+    if (!astro)
+        return;
+
+    astro->mem_ctx.mallocs_until_fail = mallocs_until_fail;
 }

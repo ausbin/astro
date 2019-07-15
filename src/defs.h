@@ -54,6 +54,10 @@ typedef struct {
 
     uc_hook stack_hook;
     heap_block_t *heap_blocks;
+    // number of mallocs to succeed until forcing
+    // malloc()/calloc()/realloc() to return NULL (regardless of actual
+    // available heap space)
+    int mallocs_until_fail;
 } mem_ctx_t;
 
 // function.c pt 1

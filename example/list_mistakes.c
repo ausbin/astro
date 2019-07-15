@@ -75,3 +75,10 @@ list_t *list_new__null_segfault(void) {
 list_t *list_new__genius_segfault(void) {
     return *(list_t **)0x69;
 }
+
+list_t *list_new__oom_segfault(void) {
+    list_t *list = malloc(sizeof (list_t));
+    list->size = 0;
+    list->head = NULL;
+    return list;
+}

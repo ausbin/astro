@@ -100,6 +100,33 @@ TEST_START(meta_test_list_new__leak,
                                   "leak memory");
 } TEST_END
 
+TEST_START(meta_test_list_new__bad_free,
+           "test_list_new catches bad free") {
+    meta_test_mock_func(list_new, list_new__bad_free);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_new);
+    meta_test_assert_err_contains("free()ing garbage pointer", astro_err,
+                                  "Tester should warn students not to "
+                                  "free garbage");
+} TEST_END
+
+TEST_START(meta_test_list_new_oom__stack,
+           "test_list_new_oop catches not calling malloc") {
+    meta_test_mock_func(list_new, list_new__stack);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_new_oom);
+    meta_test_assert_err_contains("when malloc() does", astro_err,
+                                  "Tester should tell students to return NULL "
+                                  "when malloc() does");
+} TEST_END
+
+TEST_START(meta_test_list_new_oom__segfault,
+           "test_list_new_oop causes segfault when dereferencing NULL") {
+    meta_test_mock_func(list_new, list_new__oom_segfault);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_new_oom);
+    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+                                  "Tester should catch students dereferencing "
+                                  "NULL");
+} TEST_END
+
 void add_meta_list_suite(tester_t *tester) {
     tester_push(tester, meta_test_list_new__null);
     tester_push(tester, meta_test_list_new__freed);
@@ -112,4 +139,8 @@ void add_meta_list_suite(tester_t *tester) {
     tester_push(tester, meta_test_list_new__undersized);
     tester_push(tester, meta_test_list_new__oversized);
     tester_push(tester, meta_test_list_new__leak);
+    tester_push(tester, meta_test_list_new__bad_free);
+
+    tester_push(tester, meta_test_list_new_oom__stack);
+    tester_push(tester, meta_test_list_new_oom__segfault);
 }

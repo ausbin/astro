@@ -75,5 +75,7 @@ extern const astro_err_t *astro_malloced_block_size(astro_t *astro,
 extern void astro_heap_iterate(astro_t *astro, astro_heap_iterator_t *iter_mem);
 extern const astro_heap_block_t *astro_heap_iterate_next(
         astro_heap_iterator_t *iter_mem);
+extern void astro_set_mallocs_until_fail(astro_t *astro,
+                                         int mallocs_until_fail);
 
 #endif

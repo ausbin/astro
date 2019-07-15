@@ -169,6 +169,9 @@ typedef struct {
     (void *) mem; \
 })
 
+#define tester_set_mallocs_until_fail(mallocs_until_fail) \
+    astro_set_mallocs_until_fail(__astro, mallocs_until_fail);
+
 #define tester_push(tester, test_name) \
     _tester_push(tester, &_ ## test_name)
 
