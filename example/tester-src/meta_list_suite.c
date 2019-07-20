@@ -109,6 +109,15 @@ TEST_START(meta_test_list_new__bad_free,
                                   "free garbage");
 } TEST_END
 
+TEST_START(meta_test_list_new__infiniloop,
+           "test_list_new catches infinite loop") {
+    meta_test_mock_func(list_new, list_new__infiniloop);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_new);
+    meta_test_assert_err_contains("infinite loop", astro_err,
+                                  "Tester should tell students they have "
+                                  "infinite loops");
+} TEST_END
+
 TEST_START(meta_test_list_new_oom__stack,
            "test_list_new_oop catches not calling malloc") {
     meta_test_mock_func(list_new, list_new__stack);
@@ -140,6 +149,7 @@ void add_meta_list_suite(tester_t *tester) {
     tester_push(tester, meta_test_list_new__oversized);
     tester_push(tester, meta_test_list_new__leak);
     tester_push(tester, meta_test_list_new__bad_free);
+    tester_push(tester, meta_test_list_new__infiniloop);
 
     tester_push(tester, meta_test_list_new_oom__stack);
     tester_push(tester, meta_test_list_new_oom__segfault);

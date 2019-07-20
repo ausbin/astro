@@ -2,11 +2,22 @@
 #include <stdlib.h>
 #include "defs.h"
 
-static void noop_code_hook(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {
+static void noop_code_hook(uc_engine *uc, uint64_t address, uint32_t size,
+                           void *user_data) {
     (void)uc;
     (void)address;
     (void)size;
     (void)user_data;
+}
+
+static void halt_hook(uc_engine *uc, uint64_t address, uint32_t size,
+                      void *user_data) {
+    (void)uc;
+    (void)address;
+    (void)size;
+
+    astro_t *astro = user_data;
+    astro->halted = true;
 }
 
 static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
@@ -95,7 +106,19 @@ const astro_err_t *astro_new(const char *elf_filename, astro_t **astro_out) {
     if (err = uc_hook_add(astro->uc, &hh, UC_HOOK_CODE,
                           FP2VOID(code_cb), astro, MIN_ADDR, MAX_ADDR)) {
         astro_err = astro_uc_perror(astro, "uc_hook_add hack segfault handler", err);
-        return false;
+        goto failure;
+    }
+
+    // Detect if we've hit a timeout
+    uint64_t entry_point;
+    if (astro_err = astro_get_entry_point_addr(astro, &entry_point))
+        goto failure;
+
+    uc_cb_hookcode_t halt_cb = halt_hook;
+    if (err = uc_hook_add(astro->uc, &hh, UC_HOOK_CODE,
+                          FP2VOID(halt_cb), astro, entry_point, entry_point)) {
+        astro_err = astro_uc_perror(astro, "uc_hook_add entry point handler", err);
+        goto failure;
     }
 
     if (astro_err = astro_load_sections(astro))

@@ -113,10 +113,12 @@ const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
 
     va_end(ap);
 
+    astro->halted = false;
     astro->exec_err = NULL;
     astro->sim_state = ASTRO_SIM_EXEC;
 
-    if (err = uc_emu_start(astro->uc, func_addr, 0, 0, 0)) {
+    if (err = uc_emu_start(astro->uc, func_addr, 0, 0,
+                           MAX_INSTRUCTION_COUNT)) {
         // Let the segfault handler take care of segfaults. It will set
         // astro->exec_err, so just return that
         if (err == UC_ERR_READ_UNMAPPED ||
@@ -143,7 +145,16 @@ const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
     }
 
     // error set by stubs or other listeners
-    return astro->exec_err;
+    if (astro_err = astro->exec_err)
+        goto failure;
+
+    // if we didn't make it to the halt instruction, unicorn must've
+    // terminated the simulation early (a timeout)
+    if (!astro->halted) {
+        astro_err = astro_errorf(astro, "Timeout expired. Does your code have "
+                                        "an infinite loop?");
+        goto failure;
+    }
 
     failure:
     astro->sim_state = ASTRO_SIM_NO;

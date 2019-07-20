@@ -7,6 +7,8 @@
 #include <elfutils/libdw.h>
 #include "astro.h"
 
+// TODO: make this not hardcoded
+#define MAX_INSTRUCTION_COUNT (1 << 16)
 #define MIN_ADDR 0x0000000000000000UL
 #define MAX_ADDR 0xffffffffffffffffUL
 
@@ -94,6 +96,7 @@ struct astro {
     Dwarf *dwarf;
     uc_engine *uc;
     mem_ctx_t mem_ctx;
+    bool halted;
     const astro_err_t *exec_err;
     enum astro_sim_state sim_state;
 
