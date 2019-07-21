@@ -7,6 +7,8 @@
 #include <astro.h>
 
 #define CMP(left, right) (((left) > (right)) ? 1 : ((left) < (right))? -1 : 0)
+// Less repetitive than casting to uint64_t everywhere
+#define ADDR(ptr) ((uint64_t) (ptr))
 
 typedef struct test test_t;
 
@@ -56,35 +58,63 @@ typedef struct {
     if (!(cond)) \
         __assertion_failure("%s. %s", #cond, (message));
 
+#define test_assert_int_equals(expected, actual, message) ({ \
+    int64_t _expected = (expected); \
+    int64_t _actual = (actual); \
+    if ((expected) != (actual)) \
+        __assertion_failure((message), \
+                            "%s: expected value %ld, got %ld", \
+                            #actual, (_expected), (_actual)); \
+})
+
+#define test_assert_int_not_equals(unexpected, actual, message) ({ \
+    uint64_t _unexpected = (unexpected); \
+    uint64_t _actual = (actual); \
+    if ((expected) == (actual)) \
+        __assertion_failure((message), \
+                            "%s: value was %ld, which is incorrect", \
+                            #actual, (_unexpected)); \
+})
+
 #define test_assert_uint_equals(expected, actual, message) ({ \
     uint64_t _expected = (expected); \
     uint64_t _actual = (actual); \
     if ((expected) != (actual)) \
         __assertion_failure((message), \
-                            "expected value %lu, got %lu", \
-                            (_expected), (_actual)); \
+                            "%s: expected value %lu, got %lu", \
+                            #actual, (_expected), (_actual)); \
 })
 
 #define test_assert_uint_not_equals(unexpected, actual, message) ({ \
     uint64_t _unexpected = (unexpected); \
     uint64_t _actual = (actual); \
-    if ((expected) != (actual)) \
+    if ((expected) == (actual)) \
         __assertion_failure((message), \
-                            "value was %lu, which is incorrect", \
-                            (_unexpected)); \
+                            "%s: value was %lu, which is incorrect", \
+                            #actual, (_unexpected)); \
 })
 
 #define test_assert_addr_equals(expected, actual, message) \
     if ((expected) != (actual)) \
         __assertion_failure((message), \
-                            "expected address 0x%lx, got 0x%lx", \
-                            (expected), (actual));
+                            "%s: expected address 0x%lx, got 0x%lx", \
+                            #actual, (expected), (actual));
 
 #define test_assert_addr_not_equals(unexpected, actual, message) \
     if ((unexpected) == (actual)) \
         __assertion_failure((message), \
-                            "address was 0x%lx, which is incorrect", \
-                            (unexpected));
+                            "%s: address was 0x%lx, which is incorrect", \
+                            #actual, (unexpected));
+
+#define test_make_heap_block(ptr, size, freeable) ({ \
+    const astro_err_t *astro_err; \
+    uint64_t addr; \
+    if ((astro_err = astro_malloc((__astro), (size), &(addr)))) \
+        return astro_err; \
+    if ((astro_err = astro_write_mem((__astro), (addr), (size), (ptr)))) \
+        return astro_err; \
+    addr; \
+})
 
 #define test_is_malloced_block(ptr, size) ({ \
     if (!astro_is_malloced_block(__astro, (ptr))) \
@@ -99,39 +129,41 @@ typedef struct {
 })
 
 #define test_assert_malloced_block(ptr, size, message) ({ \
-    if (astro_is_stack_pointer(__astro, (ptr))) \
+    uint64_t addr = (uint64_t) (ptr); \
+    \
+    if (astro_is_stack_pointer(__astro, addr)) \
         __assertion_failure((message), \
                             "address 0x%lx points to the stack (for " \
                             "example, a local variable) instead of a " \
-                            "malloc()d heap block", (ptr)) \
-    if (astro_is_rw_static_pointer(__astro, (ptr))) \
+                            "malloc()d heap block", addr) \
+    if (astro_is_rw_static_pointer(__astro, addr)) \
         __assertion_failure((message), \
                             "address 0x%lx points to writable static memory " \
                             "(for example, a global variable) instead of a " \
-                            "malloc()d heap block", (ptr)) \
-    if (astro_is_ro_static_pointer(__astro, (ptr))) \
+                            "malloc()d heap block", addr) \
+    if (astro_is_ro_static_pointer(__astro, addr)) \
         __assertion_failure((message), \
                             "address 0x%lx points to read-only static " \
                             "memory (for example, a string literal) instead " \
-                            "of a malloc()d heap block", (ptr)) \
-    if (astro_is_freed_block(__astro, (ptr))) \
+                            "of a malloc()d heap block", addr) \
+    if (astro_is_freed_block(__astro, addr)) \
         __assertion_failure((message), \
                             "address 0x%lx points to a freed heap block " \
-                            "instead of a malloc()d heap block", (ptr)) \
-    if (!astro_is_malloced_block(__astro, (ptr))) \
+                            "instead of a malloc()d heap block", addr) \
+    if (!astro_is_malloced_block(__astro, addr)) \
         __assertion_failure((message), \
                             "address 0x%lx does not point to the beginning " \
-                            "of a malloc()d heap block", (ptr)) \
+                            "of a malloc()d heap block", addr) \
     \
     uint64_t actual_size; \
     const astro_err_t *astro_err; \
-    if ((astro_err = astro_malloced_block_size(__astro, (ptr), &actual_size))) \
+    if ((astro_err = astro_malloced_block_size(__astro, addr, &actual_size))) \
         return astro_err; \
     \
     if ((actual_size) != (size)) \
         __assertion_failure((message), \
                             "heap block at address 0x%lx has incorrect size " \
-                            "%lu instead of expected size %lu", (ptr), \
+                            "%lu instead of expected size %lu", addr, \
                             (actual_size), (size)); \
 })
 
@@ -159,14 +191,10 @@ typedef struct {
     ret; \
 })
 
-// TODO: what if this is too big for the stack?
-#define test_read_mem(ptr, size) ({ \
-    uint8_t mem[(size)]; \
+#define test_read_mem(addr, ptr, size) ({ \
     const astro_err_t *astro_err; \
-    if ((astro_err = astro_read_mem(__astro, (ptr), (size), (uint64_t *) mem))) \
+    if ((astro_err = astro_read_mem(__astro, (uint64_t ) (addr), (size), (ptr)))) \
         return astro_err; \
-    \
-    (void *) mem; \
 })
 
 #define tester_set_mallocs_until_fail(mallocs_until_fail) \

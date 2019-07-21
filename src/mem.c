@@ -498,12 +498,28 @@ void astro_mem_ctx_cleanup(astro_t *astro) {
 }
 
 const astro_err_t *astro_read_mem(astro_t *astro, uint64_t addr, size_t size,
-                                  uint64_t *out) {
+                                  void *out) {
     uc_err err;
     const astro_err_t *astro_err;
 
     if (err = uc_mem_read(astro->uc, addr, out, size)) {
         astro_err = astro_uc_perror(astro, "astro_read_mem", err);
+        goto failure;
+    }
+
+    return NULL;
+
+    failure:
+    return astro_err;
+}
+
+const astro_err_t *astro_write_mem(astro_t *astro, uint64_t addr, size_t size,
+                                   const void *data) {
+    uc_err err;
+    const astro_err_t *astro_err;
+
+    if (err = uc_mem_write(astro->uc, addr, data, size)) {
+        astro_err = astro_uc_perror(astro, "astro_write_mem", err);
         goto failure;
     }
 
@@ -580,4 +596,9 @@ void astro_set_mallocs_until_fail(astro_t *astro, int mallocs_until_fail) {
         return;
 
     astro->mem_ctx.mallocs_until_fail = mallocs_until_fail;
+}
+
+const astro_err_t *astro_malloc(astro_t *astro, uint64_t size,
+                                uint64_t *addr_out) {
+    return mem_ctx_heap_malloc(astro, size, addr_out);
 }

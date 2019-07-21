@@ -75,6 +75,7 @@ int list_push(list_t *list, void *data) {
     node->data = data;
     node->next = list->head;
     list->head = node;
+    list->size++;
     return 1;
 }
 

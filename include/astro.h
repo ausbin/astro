@@ -62,8 +62,18 @@ struct astro_heap_iterator {
 
 typedef struct astro_heap_iterator astro_heap_iterator_t;
 
+// Use this instead of a bool to make test code more readable
+// (The malloc grader has a bunch of trues and falses and students find
+//  it confusing)
+enum freeability {
+    NOT_FREEABLE,
+    FREEABLE
+};
+
 extern const astro_err_t *astro_read_mem(astro_t *astro, uint64_t addr,
-                                         size_t size, uint64_t *out);
+                                         size_t size, void *out);
+extern const astro_err_t *astro_write_mem(astro_t *astro, uint64_t addr,
+                                          size_t size, const void *data);
 extern bool astro_is_freed_block(astro_t *astro, uint64_t addr);
 extern bool astro_is_malloced_block(astro_t *astro, uint64_t addr);
 extern bool astro_is_stack_pointer(astro_t *astro, uint64_t addr);
@@ -77,5 +87,7 @@ extern const astro_heap_block_t *astro_heap_iterate_next(
         astro_heap_iterator_t *iter_mem);
 extern void astro_set_mallocs_until_fail(astro_t *astro,
                                          int mallocs_until_fail);
+const astro_err_t *astro_malloc(astro_t *astro, uint64_t size,
+                                uint64_t *addr_out);
 
 #endif
