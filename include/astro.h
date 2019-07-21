@@ -65,10 +65,10 @@ typedef struct astro_heap_iterator astro_heap_iterator_t;
 // Use this instead of a bool to make test code more readable
 // (The malloc grader has a bunch of trues and falses and students find
 //  it confusing)
-enum freeability {
+typedef enum {
     NOT_FREEABLE,
     FREEABLE
-};
+} freeable_t;
 
 extern const astro_err_t *astro_read_mem(astro_t *astro, uint64_t addr,
                                          size_t size, void *out);
@@ -88,6 +88,6 @@ extern const astro_heap_block_t *astro_heap_iterate_next(
 extern void astro_set_mallocs_until_fail(astro_t *astro,
                                          int mallocs_until_fail);
 const astro_err_t *astro_malloc(astro_t *astro, uint64_t size,
-                                uint64_t *addr_out);
+                                freeable_t freeable, uint64_t *addr_out);
 
 #endif

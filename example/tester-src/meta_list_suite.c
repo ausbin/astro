@@ -1,6 +1,8 @@
 #include "suites.h"
 #include "../list.h"
 
+/// list_new() meta-tests ///
+
 TEST_START(meta_test_list_new__null,
            "test_list_new catches NULL return value") {
     meta_test_mock_func(list_new, list_new__null);
@@ -136,6 +138,26 @@ TEST_START(meta_test_list_new_oom__segfault,
                                   "NULL");
 } TEST_END
 
+/// list_push() meta-tests ///
+
+TEST_START(meta_test_list_push_empty__free_list,
+           "test_list_push_empty catches free()ing input list") {
+    meta_test_mock_func(list_push, list_push__free_list);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty);
+    meta_test_assert_err_contains("not allowed to free", astro_err,
+                                  "Tester needs to catch free()ing list "
+                                  "pointer");
+} TEST_END
+
+TEST_START(meta_test_list_push_empty__free_data,
+           "test_list_push_empty catches free()ing input list") {
+    meta_test_mock_func(list_push, list_push__free_data);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty);
+    meta_test_assert_err_contains("not allowed to free", astro_err,
+                                  "Tester needs to catch free()ing data "
+                                  "pointer");
+} TEST_END
+
 void add_meta_list_suite(tester_t *tester) {
     tester_push(tester, meta_test_list_new__null);
     tester_push(tester, meta_test_list_new__freed);
@@ -153,4 +175,6 @@ void add_meta_list_suite(tester_t *tester) {
 
     tester_push(tester, meta_test_list_new_oom__stack);
     tester_push(tester, meta_test_list_new_oom__segfault);
+
+    tester_push(tester, meta_test_list_push_empty__free_list);
 }

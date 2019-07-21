@@ -109,7 +109,7 @@ typedef struct {
 #define test_make_heap_block(ptr, size, freeable) ({ \
     const astro_err_t *astro_err; \
     uint64_t addr; \
-    if ((astro_err = astro_malloc((__astro), (size), &(addr)))) \
+    if ((astro_err = astro_malloc((__astro), (size), (freeable), &(addr)))) \
         return astro_err; \
     if ((astro_err = astro_write_mem((__astro), (addr), (size), (ptr)))) \
         return astro_err; \

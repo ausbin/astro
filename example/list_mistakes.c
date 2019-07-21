@@ -82,3 +82,17 @@ list_t *list_new__oom_segfault(void) {
     list->head = NULL;
     return list;
 }
+
+//// list_push() mistakes ////
+
+int list_push__free_list(list_t *list, void *data) {
+    (void)data;
+    free(list);
+    return 1;
+}
+
+int list_push__free_data(list_t *list, void *data) {
+    (void)list;
+    free(data);
+    return 1;
+}
