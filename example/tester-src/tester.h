@@ -7,8 +7,9 @@
 #include <astro.h>
 
 #define CMP(left, right) (((left) > (right)) ? 1 : ((left) < (right))? -1 : 0)
-// Less repetitive than casting to uint64_t everywhere
+// Less repetitive than casting to uint64_t or void * everywhere
 #define ADDR(ptr) ((uint64_t) (ptr))
+#define PTR(addr) ((void *) (addr))
 
 typedef struct test test_t;
 

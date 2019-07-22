@@ -140,19 +140,19 @@ TEST_START(meta_test_list_new_oom__segfault,
 
 /// list_push() meta-tests ///
 
-TEST_START(meta_test_list_push_empty__free_list,
+TEST_START(meta_test_list_push_empty_list__free_list,
            "test_list_push_empty catches free()ing input list") {
     meta_test_mock_func(list_push, list_push__free_list);
-    const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty_list);
     meta_test_assert_err_contains("not allowed to free", astro_err,
                                   "Tester needs to catch free()ing list "
                                   "pointer");
 } TEST_END
 
-TEST_START(meta_test_list_push_empty__free_data,
+TEST_START(meta_test_list_push_empty_list__free_data,
            "test_list_push_empty catches free()ing input list") {
     meta_test_mock_func(list_push, list_push__free_data);
-    const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty_list);
     meta_test_assert_err_contains("not allowed to free", astro_err,
                                   "Tester needs to catch free()ing data "
                                   "pointer");
@@ -176,5 +176,6 @@ void add_meta_list_suite(tester_t *tester) {
     tester_push(tester, meta_test_list_new_oom__stack);
     tester_push(tester, meta_test_list_new_oom__segfault);
 
-    tester_push(tester, meta_test_list_push_empty__free_list);
+    tester_push(tester, meta_test_list_push_empty_list__free_list);
+    tester_push(tester, meta_test_list_push_empty_list__free_data);
 }
