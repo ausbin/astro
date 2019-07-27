@@ -40,8 +40,9 @@ int main(int argc, char **argv) {
         if (!(test = tester_get_test(tester, argv[1]))) {
             fprintf(stderr, "error: unknown test `%s'\n", argv[1]);
             exit_code = 1;
+        } else {
+            exit_code = run_test(tester, test, 0);
         }
-        exit_code = run_test(tester, test, 0);
     } else {
         for (unsigned int i = 0; i < tester->tests_count; i++) {
             test_t *test = &tester->tests[i];
