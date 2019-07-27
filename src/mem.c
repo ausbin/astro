@@ -10,6 +10,85 @@ static void mem_uninit_init(void) {
     memset(four_kb_of_uninit, UNINIT_BYTE, 0x1000);
 }
 
+static const astro_err_t *make_segfault_error(astro_t *astro, uc_mem_type type,
+                                              uint64_t address, int size) {
+    const char *access_name;
+    switch (type) {
+        case UC_MEM_READ_UNMAPPED:
+        case UC_MEM_READ_PROT:
+            access_name = "read";
+            break;
+
+        case UC_MEM_WRITE_UNMAPPED:
+        case UC_MEM_WRITE_PROT:
+            access_name = "write";
+            break;
+
+        case UC_MEM_FETCH_UNMAPPED:
+        case UC_MEM_FETCH_PROT:
+            access_name = "jump";
+            break;
+
+        default:
+            // Should not be reachable
+            access_name = "access";
+    }
+
+    return astro_errorf(astro, "Segmentation Fault: invalid %s to "
+                               "address 0x%lx of size %d bytes",
+                               access_name, address, size);
+}
+
+static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
+                            int size, int64_t value, void *user_data) {
+    (void)uc;
+    (void)value;
+
+    astro_t *astro = user_data;
+
+    if (astro_is_access_within_stack_growth_region(astro, address, size)) {
+        astro_grow_stack(astro);
+        return true;
+    } else {
+        astro->exec_err = make_segfault_error(astro, type, address, size);
+        return false;
+    }
+}
+
+static bool validate_heap_access_hook(uc_engine *uc, uc_mem_type type,
+                                      uint64_t address, int size,
+                                      int64_t value, void *user_data) {
+    (void)uc;
+    (void)value;
+
+    astro_t *astro = user_data;
+
+    // Iterate over heap blocks and check that this is inside the body
+    // of a block. If not, treat this as a segfault, since it's better
+    // to stop now since behavior is undefined if we continue on
+    for (heap_block_t *b = astro->mem_ctx.heap_blocks; b; b = b->next) {
+        if (b->addr <= address && address < b->addr + b->size + HEAP_BLOCK_PADDING*2) {
+            switch (b->state) {
+                case UNTOUCHED:
+                case FREED:
+                goto segfault;
+
+                case MALLOCED:
+                if (b->addr + HEAP_BLOCK_PADDING <= address &&
+                        address < b->addr + HEAP_BLOCK_PADDING + b->size)
+                    return true;
+                else
+                    // They're messing around in the padding
+                    goto segfault;
+            }
+        }
+    }
+
+    segfault:
+    astro->exec_err = make_segfault_error(astro, type, address, size);
+    return false;
+}
+
 const astro_err_t *astro_grow_stack(astro_t *astro) {
     const astro_err_t *astro_err = NULL;
     uc_err err;
@@ -53,6 +132,13 @@ static const astro_err_t *mem_ctx_grow_heap(astro_t *astro, uint64_t size,
     heap_block_t *new_block = NULL;
     uint64_t size_rounded = ROUND_TO_4K(size + 2*HEAP_BLOCK_PADDING);
 
+    // If the heap was not empty, unregister the old heap hook
+    if (astro->mem_ctx.heap_range.low_addr < astro->mem_ctx.heap_range.high_addr
+            && (err = uc_hook_del(astro->uc, astro->mem_ctx.heap_hook))) {
+        astro_err = astro_uc_perror(astro, "uc_hook_del old heap hook", err);
+        goto failure;
+    }
+
     if (err = uc_mem_map(astro->uc, astro->mem_ctx.heap_range.high_addr,
                          size_rounded, UC_PROT_READ | UC_PROT_WRITE)) {
         astro_err = astro_uc_perror(astro, "uc_mem_map heap space", err);
@@ -91,6 +177,17 @@ static const astro_err_t *mem_ctx_grow_heap(astro_t *astro, uint64_t size,
         tail->next = new_block;
 
     astro->mem_ctx.heap_range.high_addr += size_rounded;
+
+    // Register new heap hook
+    uc_cb_eventmem_t heap_hook_cb = validate_heap_access_hook;
+    if (err = uc_hook_add(astro->uc, &astro->mem_ctx.heap_hook,
+                          UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
+                          FP2VOID(heap_hook_cb), astro,
+                          astro->mem_ctx.heap_range.low_addr,
+                          astro->mem_ctx.heap_range.high_addr-1)) {
+        astro_err = astro_uc_perror(astro, "uc_hook_add new heap hook", err);
+        goto failure;
+    }
 
     *block_out = new_block;
     return NULL;
@@ -473,6 +570,16 @@ const astro_err_t *astro_mem_ctx_setup(astro_t *astro) {
 
     astro->mem_ctx.heap_blocks = NULL;
     astro->mem_ctx.mallocs_until_fail = -1;
+
+    // Register segfault handler
+    uc_err err;
+    uc_hook hh;
+    uc_cb_eventmem_t segfault_cb = handle_segfault;
+    if (err = uc_hook_add(astro->uc, &hh, UC_HOOK_MEM_INVALID,
+                          FP2VOID(segfault_cb), astro, MIN_ADDR, MAX_ADDR)) {
+        astro_err = astro_uc_perror(astro, "uc_hook_add segfault handler", err);
+        goto failure;
+    }
 
     // Setup malloc(), calloc(), realloc(), free() stubs
     #define SETUP_MALLOC_STUB(name) \

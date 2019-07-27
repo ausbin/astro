@@ -20,47 +20,6 @@ static void halt_hook(uc_engine *uc, uint64_t address, uint32_t size,
     astro->halted = true;
 }
 
-static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
-                            int size, int64_t value, void *user_data) {
-    (void)uc;
-    (void)value;
-
-    astro_t *astro = user_data;
-
-    if (astro_is_access_within_stack_growth_region(astro, address, size)) {
-        astro_grow_stack(astro);
-        return true;
-    } else {
-        const char *access_name;
-        switch (type) {
-            case UC_MEM_READ_UNMAPPED:
-            case UC_MEM_READ_PROT:
-                access_name = "read";
-                break;
-
-            case UC_MEM_WRITE_UNMAPPED:
-            case UC_MEM_WRITE_PROT:
-                access_name = "write";
-                break;
-
-            case UC_MEM_FETCH_UNMAPPED:
-            case UC_MEM_FETCH_PROT:
-                access_name = "jump";
-                break;
-
-            default:
-                // Should not be reachable
-                access_name = "access";
-        }
-
-        astro->exec_err = astro_errorf(astro,
-                                       "Segmentation Fault: invalid %s to "
-                                       "address 0x%lx of size %d bytes",
-                                       access_name, address, size);
-        return false;
-    }
-}
-
 const astro_err_t *astro_new(const char *elf_filename, astro_t **astro_out) {
     const astro_err_t *astro_err = NULL;
     static const astro_err_t oom_err = {.msg = "calloc: Out of Memory",
@@ -90,13 +49,6 @@ const astro_err_t *astro_new(const char *elf_filename, astro_t **astro_out) {
     }
 
     uc_hook hh;
-
-    uc_cb_eventmem_t segfault_cb = handle_segfault;
-    if (err = uc_hook_add(astro->uc, &hh, UC_HOOK_MEM_INVALID,
-                          FP2VOID(segfault_cb), astro, MIN_ADDR, MAX_ADDR)) {
-        astro_err = astro_uc_perror(astro, "uc_hook_add segfault handler", err);
-        goto failure;
-    }
 
     // HACK: To get %rip set properly in the segfault handler, add a
     //       code hook. For some reason this works:

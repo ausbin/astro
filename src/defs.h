@@ -55,7 +55,7 @@ typedef struct {
     // (min mapped stack address, max mapped stack address + 1)
     addr_range_t stack_range;
 
-    uc_hook stack_hook;
+    uc_hook heap_hook;
     heap_block_t *heap_blocks;
     // number of mallocs to succeed until forcing
     // malloc()/calloc()/realloc() to return NULL (regardless of actual
