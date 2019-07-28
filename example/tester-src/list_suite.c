@@ -12,9 +12,11 @@ HELPER_START(make_test_list,
     for (size_t i = 0; i < size; i++) {
         int data = data_values[i % (sizeof data_values / sizeof *data_values)];
 
-        uint64_t data_addr = test_make_heap_block(&data, sizeof data, NOT_FREEABLE);
+        uint64_t data_addr = test_make_heap_block(&data, sizeof data,
+                                                  UNACCESSIBLE, NOT_FREEABLE);
         list_node_t node = { .data = PTR(data_addr), .next = PTR(next_node_addr) };
-        uint64_t node_addr = test_make_heap_block(&node, sizeof node, NOT_FREEABLE);
+        uint64_t node_addr = test_make_heap_block(&node, sizeof node,
+                                                  READABLE, NOT_FREEABLE);
 
         next_node_addr = node_addr;
         data_addrs_out[size - 1 - i] = data_addr;
@@ -22,7 +24,8 @@ HELPER_START(make_test_list,
     }
 
     list_t list = { .size = size, .head = PTR(next_node_addr) };
-    *list_addr_out = test_make_heap_block(&list, sizeof list, NOT_FREEABLE);
+    *list_addr_out = test_make_heap_block(&list, sizeof list, WRITABLE,
+                                          NOT_FREEABLE);
 } HELPER_END
 
 TEST_START(test_list_new,
@@ -66,9 +69,11 @@ TEST_START(test_list_push_empty_list,
            "list") {
 
     list_t list = { .size = 0, .head = NULL };
-    uint64_t list_addr = test_make_heap_block(&list, sizeof list, NOT_FREEABLE);
+    uint64_t list_addr = test_make_heap_block(&list, sizeof list, WRITABLE,
+                                              NOT_FREEABLE);
     int new_data = 69;
-    uint64_t new_data_addr = test_make_heap_block(&new_data, sizeof new_data, NOT_FREEABLE);
+    uint64_t new_data_addr = test_make_heap_block(&new_data, sizeof new_data,
+                                                  UNACCESSIBLE, NOT_FREEABLE);
 
     int ret = (int) test_call(list_push, list_addr, new_data_addr);
     test_read_mem(list_addr, &list, sizeof list);
@@ -108,7 +113,7 @@ TEST_START(test_list_push_singleton_list,
 
     int new_data = 69;
     uint64_t new_data_addr = test_make_heap_block(&new_data, sizeof new_data,
-                                                  NOT_FREEABLE);
+                                                  UNACCESSIBLE, NOT_FREEABLE);
 
     int ret = (int) test_call(list_push, list_addr, data_addr);
     list_t list;
@@ -154,7 +159,7 @@ TEST_START(test_list_push_nonempty_list,
 
     int new_data = 69;
     uint64_t new_data_addr = test_make_heap_block(&new_data, sizeof new_data,
-                                                  NOT_FREEABLE);
+                                                  UNACCESSIBLE, NOT_FREEABLE);
 
     int ret = (int) test_call(list_push, list_addr, new_data_addr);
     list_t list;

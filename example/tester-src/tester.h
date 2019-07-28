@@ -119,10 +119,11 @@ typedef struct {
                             "%s: address was 0x%lx, which is incorrect", \
                             #actual, (unexpected));
 
-#define test_make_heap_block(ptr, size, freeable) ({ \
+#define test_make_heap_block(ptr, size, accessible, freeable) ({ \
     const astro_err_t *astro_err; \
     uint64_t addr; \
-    if ((astro_err = astro_malloc((__astro), (size), (freeable), &(addr)))) \
+    if ((astro_err = astro_malloc((__astro), (size), (accessible), \
+                                  (freeable), &(addr)))) \
         return astro_err; \
     if ((astro_err = astro_write_mem((__astro), (addr), (size), (ptr)))) \
         return astro_err; \

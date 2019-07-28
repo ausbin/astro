@@ -37,6 +37,7 @@ typedef struct _astro_heap_block {
     // does not include padding
     uint64_t size;
     heap_block_state_t state;
+    accessible_t accessible;
     freeable_t freeable;
     struct _astro_heap_block *next;
     uc_hook access_hook;

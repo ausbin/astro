@@ -158,6 +158,24 @@ TEST_START(meta_test_list_push_empty_list__free_data,
                                   "pointer");
 } TEST_END
 
+TEST_START(meta_test_list_push_empty_list__modify_data,
+           "test_list_push_empty catches modifying input data") {
+    meta_test_mock_func(list_push, list_push__modify_data);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty_list);
+    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+                                  "Tester needs to catch modifying data "
+                                  "pointer");
+} TEST_END
+
+TEST_START(meta_test_list_push_empty_list__read_data,
+           "test_list_push_empty catches reading input data") {
+    meta_test_mock_func(list_push, list_push__read_data);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty_list);
+    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+                                  "Tester needs to catch reading data "
+                                  "pointer");
+} TEST_END
+
 void add_meta_list_suite(tester_t *tester) {
     tester_push(tester, meta_test_list_new__null);
     tester_push(tester, meta_test_list_new__freed);
@@ -178,4 +196,6 @@ void add_meta_list_suite(tester_t *tester) {
 
     tester_push(tester, meta_test_list_push_empty_list__free_list);
     tester_push(tester, meta_test_list_push_empty_list__free_data);
+    tester_push(tester, meta_test_list_push_empty_list__modify_data);
+    tester_push(tester, meta_test_list_push_empty_list__read_data);
 }

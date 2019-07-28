@@ -75,7 +75,9 @@ static bool validate_heap_access_hook(uc_engine *uc, uc_mem_type type,
 
                 case MALLOCED:
                 if (b->addr + HEAP_BLOCK_PADDING <= address &&
-                        address < b->addr + HEAP_BLOCK_PADDING + b->size)
+                        address < b->addr + HEAP_BLOCK_PADDING + b->size &&
+                        (b->accessible == READABLE && type == UC_MEM_READ ||
+                         b->accessible == WRITABLE))
                     return true;
                 else
                     // They're messing around in the padding
@@ -198,6 +200,7 @@ static const astro_err_t *mem_ctx_grow_heap(astro_t *astro, uint64_t size,
 }
 
 static const astro_err_t *mem_ctx_heap_malloc(astro_t *astro, uint64_t size,
+                                              accessible_t accessible,
                                               freeable_t freeable,
                                               uint64_t *addr_out) {
     if (astro->mem_ctx.mallocs_until_fail >= 0) {
@@ -258,6 +261,7 @@ static const astro_err_t *mem_ctx_heap_malloc(astro_t *astro, uint64_t size,
     }
 
     result->state = MALLOCED;
+    result->accessible = accessible;
     result->freeable = freeable;
     *addr_out = result->addr + HEAP_BLOCK_PADDING;
 
@@ -344,7 +348,8 @@ static const astro_err_t *mem_ctx_heap_calloc(astro_t *astro,
     uint64_t total_size = nmemb * size;
 
     uint64_t addr = 0;
-    if (astro_err = mem_ctx_heap_malloc(astro, total_size, FREEABLE, &addr))
+    if (astro_err = mem_ctx_heap_malloc(astro, total_size, WRITABLE, FREEABLE,
+                                        &addr))
         goto failure;
 
     if (addr) {
@@ -413,7 +418,7 @@ static const astro_err_t *mem_ctx_heap_realloc(astro_t *astro,
     // Else provided they provided an existing pointer, we want to malloc the
     // new size and copy contents over
     } else if (ptr) {
-        if (!mem_ctx_heap_malloc(astro, size, FREEABLE, &addr))
+        if (!mem_ctx_heap_malloc(astro, size, WRITABLE, FREEABLE, &addr))
             goto failure;
 
         uint64_t copy_size = MIN(existing_size, size);
@@ -463,7 +468,8 @@ static void malloc_stub(astro_t *astro, void *user_data) {
         goto failure;
 
     uint64_t addr = 0;
-    if (astro_err = mem_ctx_heap_malloc(astro, size, FREEABLE, &addr))
+    if (astro_err = mem_ctx_heap_malloc(astro, size, WRITABLE, FREEABLE,
+                                        &addr))
         goto failure;
 
     if (astro_err = astro_stub_ret(astro, addr))
@@ -715,6 +721,7 @@ void astro_set_mallocs_until_fail(astro_t *astro, int mallocs_until_fail) {
 }
 
 const astro_err_t *astro_malloc(astro_t *astro, uint64_t size,
-                                freeable_t freeable, uint64_t *addr_out) {
-    return mem_ctx_heap_malloc(astro, size, freeable, addr_out);
+                                accessible_t accessible, freeable_t freeable,
+                                uint64_t *addr_out) {
+    return mem_ctx_heap_malloc(astro, size, accessible, freeable, addr_out);
 }

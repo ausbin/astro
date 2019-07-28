@@ -96,3 +96,16 @@ int list_push__free_data(list_t *list, void *data) {
     free(data);
     return 1;
 }
+
+int list_push__modify_data(list_t *list, void *data) {
+    (void)list;
+    *(int *)data = 34;
+    return 1;
+}
+
+int list_push__read_data(list_t *list, void *data) {
+    (void)list;
+    int x = *(int *)data;
+    (void)x;
+    return 1;
+}
