@@ -27,7 +27,8 @@ extern void astro_free(astro_t *astro);
 // err.c
 extern const astro_err_t *astro_errorf(astro_t *astro, const char *fmt, ...);
 extern const astro_err_t *astro_perror(astro_t *astro, const char *s);
-extern void astro_print_err(FILE *outfp, const astro_err_t *astro_err);
+extern void astro_print_err(FILE *outfp, const char *indent,
+                            const astro_err_t *astro_err);
 extern const astro_err_t *astro_errdup(const astro_err_t *astro_err);
 extern void astro_escape_str(const char *in, char *out);
 

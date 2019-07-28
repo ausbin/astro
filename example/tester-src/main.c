@@ -14,7 +14,10 @@ static int run_test(tester_t *tester, test_t *test, int blank_line) {
     if (astro_err) {
         if (blank_line)
             printf("\n");
-        astro_print_err(stderr, astro_err);
+
+        fprintf(stderr, "Failed test %s: %s:\n", test->name,
+                                                 test->description);
+        astro_print_err(stderr, "    ", astro_err);
     }
     return !!astro_err;
 }

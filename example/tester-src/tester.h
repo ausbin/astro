@@ -48,12 +48,10 @@ typedef struct {
 
 #define __assertion_failure(message, format_str, ...) \
     return astro_errorf(__astro, \
-                        "Assertion failure in %s at %s:%d. %s\n\tFailing " \
+                        "Assertion failure at %s:%d.\n\tFailing " \
                         "condition: " format_str "\n\tFailing condition " \
                         "description: %s", \
-                        __test->name, __FILE__, __LINE__, \
-                        __test->description, ##__VA_ARGS__, \
-                        (message));
+                        __FILE__, __LINE__, ##__VA_ARGS__, (message));
 
 #define test_assert(cond, message) \
     if (!(cond)) \

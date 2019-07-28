@@ -49,13 +49,14 @@ const astro_err_t *astro_dwarf_perror(astro_t *astro, const char *s) {
     return astro_errorf(astro, "%s: %s", s, dwarf_errmsg(-1));
 }
 
-void astro_print_err(FILE *outfp, const astro_err_t *astro_err) {
-    fprintf(outfp, "ERROR: %s\n", astro_err->msg);
+void astro_print_err(FILE *outfp, const char *indent,
+                     const astro_err_t *astro_err) {
+    fprintf(outfp, "%sERROR: %s\n", indent, astro_err->msg);
 
     for (unsigned int i = 0; i < astro_err->backtrace_len; i++) {
         const astro_bt_t *frame = &astro_err->backtrace[i];
-        fprintf(outfp, "    %s() at %s:%d\n", frame->function, frame->file,
-                                              frame->line);
+        fprintf(outfp, "%s%s%s() at %s:%d\n", indent, indent, frame->function,
+                                              frame->file, frame->line);
     }
 }
 
@@ -132,7 +133,7 @@ const astro_err_t *astro_errdup(const astro_err_t *astro_err) {
 
     // Log the original error so we're not just throwing it away
     fprintf(stderr, "allocating a copy of the following astro_err_t failed: ");
-    astro_print_err(stderr, astro_err);
+    astro_print_err(stderr, "\t", astro_err);
 
     static const astro_err_t oom_err = {.msg = "malloc for astro_err_t copy: "
                                                "Out of Memory",
