@@ -46,6 +46,20 @@ typedef struct {
         return NULL; \
     }
 
+#define HELPER_START(helper_name, ...) \
+    static const astro_err_t *helper_name(test_t *__test, astro_t *__astro, ##__VA_ARGS__) { \
+        (void)__test; \
+        (void)__astro;
+#define HELPER_END \
+        return NULL; \
+    }
+
+#define test_call_helper(helper_name, ...) ({ \
+    const astro_err_t *astro_err; \
+    if ((astro_err = helper_name(__test, __astro, ##__VA_ARGS__))) \
+        return astro_err; \
+})
+
 #define __assertion_failure(message, format_str, ...) \
     return astro_errorf(__astro, \
                         "Assertion failure at %s:%d.\n\tFailing " \
