@@ -133,7 +133,7 @@ TEST_START(meta_test_list_new_oom__segfault,
            "test_list_new_oop causes segfault when dereferencing NULL") {
     meta_test_mock_func(list_new, list_new__oom_segfault);
     const astro_err_t *astro_err = meta_test_run_test(test_list_new_oom);
-    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+    meta_test_assert_err_contains("NULL", astro_err,
                                   "Tester should catch students dereferencing "
                                   "NULL");
 } TEST_END
@@ -162,7 +162,7 @@ TEST_START(meta_test_list_push_empty_list__modify_data,
            "test_list_push_empty catches modifying input data") {
     meta_test_mock_func(list_push, list_push__modify_data);
     const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty_list);
-    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+    meta_test_assert_err_contains("unwritable", astro_err,
                                   "Tester needs to catch modifying data "
                                   "pointer");
 } TEST_END
@@ -171,7 +171,7 @@ TEST_START(meta_test_list_push_empty_list__read_data,
            "test_list_push_empty catches reading input data") {
     meta_test_mock_func(list_push, list_push__read_data);
     const astro_err_t *astro_err = meta_test_run_test(test_list_push_empty_list);
-    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+    meta_test_assert_err_contains("unreadable", astro_err,
                                   "Tester needs to catch reading data "
                                   "pointer");
 } TEST_END
@@ -180,7 +180,7 @@ TEST_START(meta_test_list_push_null_list__missing_null_check,
            "test_list_push_empty catches missing the null list check") {
     meta_test_mock_func(list_push, list_push__missing_null_check);
     const astro_err_t *astro_err = meta_test_run_test(test_list_push_null_list);
-    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+    meta_test_assert_err_contains("NULL", astro_err,
                                   "Tester needs to catch dereferencing null");
 } TEST_END
 
@@ -188,7 +188,7 @@ TEST_START(meta_test_list_push_oom__oom_segfault,
            "test_list_new_oop causes segfault when dereferencing NULL") {
     meta_test_mock_func(list_new, list_new__oom_segfault);
     const astro_err_t *astro_err = meta_test_run_test(test_list_new_oom);
-    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+    meta_test_assert_err_contains("NULL", astro_err,
                                   "Tester should catch students dereferencing "
                                   "NULL");
 } TEST_END

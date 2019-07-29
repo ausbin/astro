@@ -71,7 +71,6 @@ typedef enum {
     FREEABLE
 } freeable_t;
 
-// Use an enum for the same reason as freeable_t
 typedef enum {
     UNACCESSIBLE,
     READABLE,

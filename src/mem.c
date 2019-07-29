@@ -11,7 +11,8 @@ static void mem_uninit_init(void) {
 }
 
 static const astro_err_t *make_segfault_error(astro_t *astro, uc_mem_type type,
-                                              uint64_t address, int size) {
+                                              uint64_t address, int size,
+                                              const char *description) {
     const char *access_name;
     switch (type) {
         case UC_MEM_READ_UNMAPPED:
@@ -35,8 +36,8 @@ static const astro_err_t *make_segfault_error(astro_t *astro, uc_mem_type type,
     }
 
     return astro_errorf(astro, "Segmentation Fault: invalid %s to "
-                               "address 0x%lx of size %d bytes",
-                               access_name, address, size);
+                               "address 0x%lx (%s) of size %d bytes",
+                               access_name, address, description, size);
 }
 
 static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
@@ -50,7 +51,8 @@ static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
         astro_grow_stack(astro);
         return true;
     } else {
-        astro->exec_err = make_segfault_error(astro, type, address, size);
+        const char *description = address? "in the middle of nowhere" : "NULL";
+        astro->exec_err = make_segfault_error(astro, type, address, size, description);
         return false;
     }
 }
@@ -61,6 +63,7 @@ static bool validate_heap_access_hook(uc_engine *uc, uc_mem_type type,
     (void)uc;
     (void)value;
 
+    const char *description;
     astro_t *astro = user_data;
 
     // Iterate over heap blocks and check that this is inside the body
@@ -70,24 +73,43 @@ static bool validate_heap_access_hook(uc_engine *uc, uc_mem_type type,
         if (b->addr <= address && address < b->addr + b->size + HEAP_BLOCK_PADDING*2) {
             switch (b->state) {
                 case UNTOUCHED:
+                description = "in a block not yet returned by malloc()";
+                goto segfault;
+
                 case FREED:
+                description = "in a free()d block";
                 goto segfault;
 
                 case MALLOCED:
-                if (b->addr + HEAP_BLOCK_PADDING <= address &&
-                        address < b->addr + HEAP_BLOCK_PADDING + b->size &&
-                        (b->accessible == READABLE && type == UC_MEM_READ ||
-                         b->accessible == WRITABLE))
-                    return true;
-                else
-                    // They're messing around in the padding
+                if (address < b->addr + HEAP_BLOCK_PADDING) {
+                    description = "in the padding before a heap block";
                     goto segfault;
+                }
+                if (address >= b->addr + HEAP_BLOCK_PADDING + b->size) {
+                    description = "in the padding following a heap block";
+                    goto segfault;
+                }
+                if (type == UC_MEM_READ && b->accessible < READABLE) {
+                    description = "in a heap block marked unreadable by the tester";
+                    goto segfault;
+                }
+                if (type == UC_MEM_WRITE && b->accessible < WRITABLE) {
+                    description = "in a heap block marked unwritable by the tester";
+                    goto segfault;
+                }
+                // all good
+                return true;
             }
         }
     }
 
+    // Shouldn't be possible: every address in the heap should be inside
+    // a block (UNTOUCHED above should always cover this case)
+    description = "unknown location in the heap";
+
     segfault:
-    astro->exec_err = make_segfault_error(astro, type, address, size);
+    astro->exec_err = make_segfault_error(astro, type, address, size,
+                                          description);
     return false;
 }
 
