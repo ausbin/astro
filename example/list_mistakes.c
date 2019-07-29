@@ -109,3 +109,9 @@ int list_push__read_data(list_t *list, void *data) {
     (void)x;
     return 1;
 }
+
+int list_push__missing_null_check(list_t *list, void *data) {
+    (void)data;
+    list->size++;
+    return 1;
+}

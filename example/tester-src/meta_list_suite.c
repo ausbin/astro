@@ -176,6 +176,23 @@ TEST_START(meta_test_list_push_empty_list__read_data,
                                   "pointer");
 } TEST_END
 
+TEST_START(meta_test_list_push_null_list__missing_null_check,
+           "test_list_push_empty catches missing the null list check") {
+    meta_test_mock_func(list_push, list_push__missing_null_check);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_push_null_list);
+    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+                                  "Tester needs to catch dereferencing null");
+} TEST_END
+
+TEST_START(meta_test_list_push_oom__oom_segfault,
+           "test_list_new_oop causes segfault when dereferencing NULL") {
+    meta_test_mock_func(list_new, list_new__oom_segfault);
+    const astro_err_t *astro_err = meta_test_run_test(test_list_new_oom);
+    meta_test_assert_err_contains("Segmentation Fault", astro_err,
+                                  "Tester should catch students dereferencing "
+                                  "NULL");
+} TEST_END
+
 void add_meta_list_suite(tester_t *tester) {
     tester_push(tester, meta_test_list_new__null);
     tester_push(tester, meta_test_list_new__freed);
@@ -198,4 +215,6 @@ void add_meta_list_suite(tester_t *tester) {
     tester_push(tester, meta_test_list_push_empty_list__free_data);
     tester_push(tester, meta_test_list_push_empty_list__modify_data);
     tester_push(tester, meta_test_list_push_empty_list__read_data);
+    tester_push(tester, meta_test_list_push_null_list__missing_null_check);
+    tester_push(tester, meta_test_list_push_oom__oom_segfault);
 }

@@ -54,7 +54,6 @@ TEST_START(test_list_new_oom,
     tester_set_mallocs_until_fail(0);
 
     uint64_t list_addr = test_call(list_new);
-    // TODO: make an equals macro to print both values
     test_assert_addr_equals(0, list_addr,
                             "list_new() should return NULL when malloc() "
                             "does");
@@ -105,17 +104,15 @@ TEST_START(test_list_push_empty_list,
 } TEST_END
 
 TEST_START(test_list_push_singleton_list,
-           "list_push() should insert an element at the beginning of a list "
-           "containing only element") {
+           "list_push() should insert a NULL element at the beginning of a "
+           "list containing only element") {
 
     uint64_t list_addr, data_addr, node_addr;
     test_call_helper(make_test_list, 1, &list_addr, &data_addr, &node_addr);
 
-    int new_data = 69;
-    uint64_t new_data_addr = test_make_heap_block(&new_data, sizeof new_data,
-                                                  UNACCESSIBLE, NOT_FREEABLE);
+    uint64_t new_data_addr = ADDR(NULL);
 
-    int ret = (int) test_call(list_push, list_addr, data_addr);
+    int ret = (int) test_call(list_push, list_addr, new_data_addr);
     list_t list;
     test_read_mem(list_addr, &list, sizeof list);
 
@@ -136,7 +133,7 @@ TEST_START(test_list_push_singleton_list,
                             "list_push() should set list->head->next to the "
                             "address of the original first node, since the "
                             "new node is the new head node");
-    test_assert_addr_equals(data_addr, ADDR(head_node.data),
+    test_assert_addr_equals(new_data_addr, ADDR(head_node.data),
                             "list_push() points list->head->data to the data "
                             "pointer passed in");
 
@@ -198,6 +195,40 @@ TEST_START(test_list_push_nonempty_list,
                            {ADDR(list.head), "list_node_t struct created"});
 } TEST_END
 
+TEST_START(test_list_push_null_list,
+           "list_push() should handle list == NULL") {
+
+    int new_data = 69;
+    uint64_t new_data_addr = test_make_heap_block(&new_data, sizeof new_data,
+                                                  UNACCESSIBLE, NOT_FREEABLE);
+
+    int ret = (int) test_call(list_push, ADDR(NULL), new_data_addr);
+    test_assert_int_equals(0, ret,
+                           "list_push() should return 0 when list == NULL");
+    test_assert_heap_state("list_push() should not allocate memory without a "
+                           "valid list",
+                           {new_data_addr, "data passed in"});
+} TEST_END
+
+TEST_START(test_list_push_oom,
+           "list_push() should return 0 when out of memory") {
+
+    list_t list = { .size = 0, .head = NULL };
+    uint64_t list_addr = test_make_heap_block(&list, sizeof list, WRITABLE,
+                                              NOT_FREEABLE);
+
+    int new_data = 69;
+    uint64_t new_data_addr = test_make_heap_block(&new_data, sizeof new_data,
+                                                  UNACCESSIBLE, NOT_FREEABLE);
+
+    tester_set_mallocs_until_fail(0);
+
+    int ret = (int) test_call(list_push, list_addr, new_data_addr);
+    test_assert_int_equals(0, ret,
+                           "list_push() should return 0 when malloc() "
+                           "fails");
+} TEST_END
+
 void add_list_suite(tester_t *tester) {
     tester_push(tester, test_list_new);
     tester_push(tester, test_list_new_oom);
@@ -205,4 +236,6 @@ void add_list_suite(tester_t *tester) {
     tester_push(tester, test_list_push_empty_list);
     tester_push(tester, test_list_push_singleton_list);
     tester_push(tester, test_list_push_nonempty_list);
+    tester_push(tester, test_list_push_null_list);
+    tester_push(tester, test_list_push_oom);
 }
