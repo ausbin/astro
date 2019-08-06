@@ -98,4 +98,7 @@ const astro_err_t *astro_malloc(astro_t *astro, uint64_t size,
                                 accessible_t accessible, freeable_t freeable,
                                 uint64_t *addr_out);
 
+// gdb.c
+#define ASTRO_GDB_PORT_NUMBER 6969
+
 #endif
