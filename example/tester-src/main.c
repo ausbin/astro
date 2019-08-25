@@ -11,8 +11,11 @@ static void print_usage(const char *prog) {
     // TODO: print available tests
 }
 
-static int run_test(tester_t *tester, test_t *test, int blank_line) {
-    const astro_err_t *astro_err = tester_run_test(tester, test);
+static int run_test(tester_t *tester, test_t *test, bool gdb, int blank_line) {
+    const astro_err_t *astro_err;
+
+    astro_err = tester_run_test(tester, test, gdb);
+
     if (astro_err) {
         if (blank_line)
             printf("\n");
@@ -22,13 +25,6 @@ static int run_test(tester_t *tester, test_t *test, int blank_line) {
         astro_print_err(stderr, "    ", astro_err);
     }
     return !!astro_err;
-}
-
-static int run_test_gdb(tester_t *tester, test_t *test) {
-    (void)tester;
-    (void)test;
-
-    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -41,7 +37,7 @@ int main(int argc, char **argv) {
     } else if (nargs == 2 && !strcmp(argv[1], "--gdb")) {
         test_name = argv[2];
         gdb = true;
-    } else if (nargs > 2) {
+    } else if (nargs > 0) {
         print_usage(argv[0]);
         return 1;
     }
@@ -57,15 +53,13 @@ int main(int argc, char **argv) {
         if (!(test = tester_get_test(tester, test_name))) {
             fprintf(stderr, "error: unknown test `%s'\n", test_name);
             exit_code = 1;
-        } else if (gdb) {
-            exit_code = run_test_gdb(tester, test);
         } else {
-            exit_code = run_test(tester, test, 0);
+            exit_code = run_test(tester, test, gdb, 0);
         }
     } else {
         for (unsigned int i = 0; i < tester->tests_count; i++) {
             test_t *test = &tester->tests[i];
-            exit_code = run_test(tester, test, exit_code) || exit_code;
+            exit_code = run_test(tester, test, gdb, exit_code) || exit_code;
         }
     }
 

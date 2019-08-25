@@ -221,7 +221,7 @@ extern tester_t *tester_new(const char *elf_path);
 extern void tester_free(tester_t *);
 extern void _tester_push(tester_t *, test_t *test);
 extern test_t *tester_get_test(tester_t *tester, const char *test_name);
-extern const astro_err_t *tester_run_test(tester_t *tester, test_t *test);
+extern const astro_err_t *tester_run_test(tester_t *tester, test_t *test, bool gdb);
 extern const astro_err_t *tester_run_all_tests(tester_t *tester);
 extern bool _tester_assert_heap_state(astro_t *astro,
                                       _tester_heap_state_t *heap_state_args,

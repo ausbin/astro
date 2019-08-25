@@ -180,3 +180,13 @@ void astro_escape_str(const char *in, char *out) {
 
     *out = '\0';
 }
+
+void astro_sim_die(astro_t *astro, const astro_err_t *astro_err) {
+    astro->exec_err = astro_err;
+
+    uc_err err;
+    // TODO: create some kind of chained astro_err_t
+    // No way to handle this error, but print it anyway
+    if (err = uc_emu_stop(astro->uc))
+        fprintf(stderr, "uc_emu_stop: %s\n", uc_strerror(err));
+}

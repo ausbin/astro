@@ -97,14 +97,21 @@ test_t *tester_get_test(tester_t *tester, const char *test_name) {
     return NULL;
 }
 
-const astro_err_t *tester_run_test(tester_t *tester, test_t *test) {
+const astro_err_t *tester_run_test(tester_t *tester, test_t *test, bool gdb) {
     astro_t *astro;
     const astro_err_t *astro_err;
 
     if ((astro_err = astro_new(tester->elf_path, &astro)))
         goto failure;
 
+    if (!gdb || (astro_err = astro_host_gdb_server(astro)))
+        goto failure;
+
     astro_err = test->func(test, astro);
+
+    const astro_err_t *close_err;
+    if (!gdb || (close_err = astro_close_gdb_server(astro)))
+        astro_err = close_err;
 
     failure:
     // Need to duplicate, since the storage for an error is stored in
@@ -117,7 +124,7 @@ const astro_err_t *tester_run_test(tester_t *tester, test_t *test) {
 const astro_err_t *tester_run_all_tests(tester_t *tester) {
     for (unsigned int i = 0; i < tester->tests_count; i++) {
         const astro_err_t *astro_err;
-        if ((astro_err = tester_run_test(tester, &tester->tests[i])))
+        if ((astro_err = tester_run_test(tester, &tester->tests[i], false)))
             return astro_err;
     }
     return NULL;

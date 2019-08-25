@@ -78,6 +78,24 @@ typedef struct stub {
     uc_hook hook;
 } stub_t;
 
+// gdb.c pt 1
+typedef enum {
+    ACTION_WAIT,
+    ACTION_STEP,
+    ACTION_CONTINUE,
+} action_t;
+
+typedef struct {
+    bool debugging;
+    bool break_next;
+    action_t action;
+    unsigned int len;
+    char connbuf[256];
+    char argbuf[256];
+    int sockfd;
+    int connfd;
+} gdb_ctx_t;
+
 // astro.c
 enum astro_sim_state {
     // Not currently simulating student code
@@ -98,6 +116,7 @@ struct astro {
     Dwarf *dwarf;
     uc_engine *uc;
     mem_ctx_t mem_ctx;
+    gdb_ctx_t gdb_ctx;
     bool halted;
     const astro_err_t *exec_err;
     enum astro_sim_state sim_state;
@@ -161,11 +180,18 @@ extern const astro_err_t *astro_uc_perror(astro_t *astro, const char *s, uc_err 
 extern const astro_err_t *astro_elf_perror(astro_t *astro, const char *s);
 extern const astro_err_t *astro_dwarf_perror(astro_t *astro, const char *s);
 extern const char *astro_intern_str(astro_t *astro, const char *src);
+extern void astro_sim_die(astro_t *astro, const astro_err_t *astro_err);
 
 // function.c
-const astro_err_t *astro_make_backtrace(astro_t *astro,
-                                        const astro_bt_t **bt_out,
-                                        size_t *bt_len_out,
-                                        bool *bt_truncated_out);
+extern const astro_err_t *astro_make_backtrace(astro_t *astro,
+                                               const astro_bt_t **bt_out,
+                                               size_t *bt_len_out,
+                                               bool *bt_truncated_out);
+
+// gdb.c pt. 2
+extern const astro_err_t *astro_gdb_ctx_setup(astro_t *astro);
+extern const astro_err_t *wait_on_and_exec_command(astro_t *astro);
+extern void breakpoint_code_hook(uc_engine *uc, uint64_t address,
+                                 uint32_t size, void *user_data);
 
 #endif

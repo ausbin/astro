@@ -117,6 +117,11 @@ const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
     astro->exec_err = NULL;
     astro->sim_state = ASTRO_SIM_EXEC;
 
+    // We need to break on the first instruction if we're debugging. We
+    // want the debugger to start at a breakpoint
+    if (astro->gdb_ctx.debugging)
+        astro->gdb_ctx.break_next = true;
+
     if (err = uc_emu_start(astro->uc, func_addr, 0, 0,
                            MAX_INSTRUCTION_COUNT)) {
         // Let the segfault handler take care of segfaults. It will set
@@ -417,13 +422,7 @@ const astro_err_t *astro_stub_ret(astro_t *astro, uint64_t retval) {
 }
 
 void astro_stub_die(astro_t *astro, const astro_err_t *astro_err) {
-    astro->exec_err = astro_err;
-
-    uc_err err;
-    // TODO: create some kind of chained astro_err_t
-    // No way to handle this error, but print it anyway
-    if (err = uc_emu_stop(astro->uc))
-        fprintf(stderr, "uc_emu_stop: %s\n", uc_strerror(err));
+    astro_sim_die(astro, astro_err);
 }
 
 const astro_err_t *astro_stub_setup(astro_t *astro, void *user_data,
