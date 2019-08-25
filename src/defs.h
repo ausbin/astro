@@ -187,6 +187,7 @@ extern const astro_err_t *astro_make_backtrace(astro_t *astro,
                                                const astro_bt_t **bt_out,
                                                size_t *bt_len_out,
                                                bool *bt_truncated_out);
+extern const astro_err_t *astro_sim_at_hlt(astro_t *astro, bool *yes_out);
 
 // gdb.c pt. 2
 extern const astro_err_t *astro_gdb_ctx_setup(astro_t *astro);

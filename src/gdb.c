@@ -213,7 +213,7 @@ static const astro_err_t *send_ack(astro_t *astro) {
     return astro_err;
 }
 
-static const astro_err_t *read_packet(astro_t *astro) {
+static const astro_err_t *read_packet(astro_t *astro, bool *eof_out) {
     const astro_err_t *astro_err = NULL;
     gdb_ctx_t *ctx = &astro->gdb_ctx;
 
@@ -233,9 +233,8 @@ static const astro_err_t *read_packet(astro_t *astro) {
                 astro_err = astro_perror(astro, "gdb connection read");
                 goto failure;
             } else if (n == 0) {
-                // TODO: handle EOF
-                astro_err = astro_perror(astro, "i don't know how to handle eof");
-                goto failure;
+                *eof_out = true;
+                return NULL;
             }
 
             ctx->len += n;
@@ -281,6 +280,8 @@ static const astro_err_t *read_packet(astro_t *astro) {
 
         break;
     }
+
+    *eof_out = false;
 
     failure:
     return astro_err;
@@ -331,20 +332,30 @@ const astro_err_t *wait_on_and_exec_command(astro_t *astro) {
     const astro_err_t *astro_err = NULL;
     gdb_ctx_t *ctx = &astro->gdb_ctx;
 
+    bool at_hlt;
+    if (astro_err = astro_sim_at_hlt(astro, &at_hlt))
+        goto failure;
+
     // Must be a reason we stopped. Possibilities by decreasing priority:
     //  1. breakpoint (TODO)
     //  2. segfault
     //  3. stepping (step only)
     //  4. program finished
     if (ctx->action == ACTION_STEP || ctx->action == ACTION_CONTINUE) {
-        if (ctx->action == ACTION_STEP) {
+        // If we're about to halt, lie to gdb and say we exited
+        if (at_hlt) {
+            if (astro_err = send_response(astro, "W00"))
+                goto failure;
+        } else if (ctx->action == ACTION_STEP) {
             // TODO: may not be correct. This only handles #3 above, what
             //       about segfaults?
             // Tell gdb that single-stepping is a hardware breakpoint
             if (astro_err = send_response(astro, "S05hwbreak:"))
                 goto failure;
         } else if (ctx->action == ACTION_CONTINUE) {
-            // TODO: do this
+            // TODO: implement
+            astro_err = astro_errorf(astro, "can't handle continue yet");
+            goto failure;
         }
 
         // We've sent a response, so now we want an ack
@@ -355,8 +366,27 @@ const astro_err_t *wait_on_and_exec_command(astro_t *astro) {
     ctx->action = ACTION_WAIT;
 
     while (ctx->action == ACTION_WAIT) {
-        if (astro_err = read_packet(astro))
+        bool eof;
+
+        if (astro_err = read_packet(astro, &eof))
             goto failure;
+
+        if (at_hlt) {
+            ctx->debugging = false;
+
+            if (eof) {
+                fprintf(stderr, "caught eof, cool beans\n");
+                return NULL;
+            } else {
+                astro_err = astro_errorf(astro, "gdb did not close connection "
+                                                "after W response");
+                goto failure;
+            }
+        } else if (eof) {
+            astro_err = astro_errorf(astro, "gdb unexpectedly closed the "
+                                            "connection");
+            goto failure;
+        }
 
         if (astro_err = send_ack(astro))
             goto failure;
@@ -365,7 +395,8 @@ const astro_err_t *wait_on_and_exec_command(astro_t *astro) {
 
         unsigned char command = *ctx->argbuf;
         if (commands[command]) {
-            commands[command](astro, ctx->argbuf + 1, &ctx->action);
+            if (astro_err = commands[command](astro, ctx->argbuf + 1, &ctx->action))
+                goto failure;
         } else {
             // Per the spec, "for any command not supported by the stub, an empty
             // response (`$#00') should be returned."
@@ -485,8 +516,63 @@ static const astro_err_t *read_mem_command(astro_t *astro, const char *args,
     (void)astro;
     (void)args;
 
+    uc_err err;
+    const astro_err_t *astro_err = NULL;
+
+    const char *ptr = args;
+    uint64_t addr = 0;
+
+    while (*ptr && *ptr != ',') {
+        addr = addr << 4 | read_hex_char(*ptr);
+        ptr++;
+    }
+
+    // Skip past ,
+    if (*ptr != ',') {
+        astro_err = astro_errorf(astro, "malformed m packet: \\x%02x is not "
+                                        "`,'", *ptr);
+        goto failure;
+    }
+    ptr++;
+
+    uint64_t len = 0;
+
+    while (*ptr) {
+        len = len << 4 | read_hex_char(*ptr);
+        ptr++;
+    }
+
+    char *buf = malloc(len);
+    if (!buf) {
+        astro_err = astro_perror(astro, "m response mem malloc");
+        goto failure;
+    }
+
+    err = uc_mem_read(astro->uc, addr, buf, len);
+
+    if (err == UC_ERR_READ_UNMAPPED) {
+        // TODO: map an unwritable, unreadable page of zeros after
+        // (higher than) the stack in memory so gdb doesn't get confused
+        if (astro_err = send_response(astro, "E00"))
+            goto failure;
+    } else if (err) {
+        astro_err = astro_uc_perror(astro, "m response uc_mem_read", err);
+        goto failure;
+    } else {
+        char *response_buf = malloc(2*len + 1);
+
+        for (unsigned int i = 0; i < len; i++) {
+            snprintf(response_buf + 2*i, 3, "%02x", buf[i]);
+        }
+
+        if (astro_err = send_response(astro, response_buf))
+            goto failure;
+    }
+
     *action_out = ACTION_WAIT;
-    return NULL;
+
+    failure:
+    return astro_err;
 }
 
 static const astro_err_t *write_mem_command(astro_t *astro, const char *args,

@@ -142,16 +142,16 @@ const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
 
     astro->sim_state = ASTRO_SIM_NO;
 
+    // error set by stubs or other listeners
+    if (astro_err = astro->exec_err)
+        goto failure;
+
     if (ret) {
         if (err = uc_reg_read(astro->uc, UC_X86_REG_RAX, ret)) {
             astro_err = astro_uc_perror(astro, "uc_reg_read %rax", err);
             goto failure;
         }
     }
-
-    // error set by stubs or other listeners
-    if (astro_err = astro->exec_err)
-        goto failure;
 
     // if we didn't make it to the halt instruction, unicorn must've
     // terminated the simulation early (a timeout)
@@ -462,6 +462,27 @@ const astro_err_t *astro_stub_setup(astro_t *astro, void *user_data,
     }
 
     return NULL;
+
+    failure:
+    return astro_err;
+}
+
+const astro_err_t *astro_sim_at_hlt(astro_t *astro, bool *yes_out) {
+    uc_err err;
+    const astro_err_t *astro_err = NULL;
+
+    uint64_t entry_point;
+    if (astro_err = astro_get_entry_point_addr(astro, &entry_point))
+        goto failure;
+
+    uint64_t pc;
+    if (err = uc_reg_read(astro->uc, UC_X86_REG_RIP, &pc)) {
+        astro_err = astro_uc_perror(astro, "uc_reg_read %rip for hlt check",
+                                    err);
+        goto failure;
+    }
+
+    *yes_out = pc == entry_point;
 
     failure:
     return astro_err;

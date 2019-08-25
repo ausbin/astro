@@ -2,7 +2,15 @@
 #include "list.h"
 
 list_t *list_new(void) {
-    return calloc(1, sizeof (list_t));
+    //return calloc(1, sizeof (list_t));
+    int n = 0;
+    n++;
+    //for (int i = 0; i < 5; i++)
+    //    n += i;
+
+    (void)n;
+
+    return NULL;
 }
 
 void list_free(list_t *list, list_free_func_t free_func) {
