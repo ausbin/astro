@@ -106,16 +106,27 @@ void breakpoint_code_hook(uc_engine *uc, uint64_t address, uint32_t size,
     (void)address;
     (void)size;
 
+    const astro_err_t *astro_err = NULL;
     astro_t *astro = user_data;
     gdb_ctx_t *ctx = &astro->gdb_ctx;
 
-    if (ctx->debugging && ctx->break_next) {
-        ctx->break_next = false;
+    if (ctx->debugging) {
+        bool at_hlt;
+        if (astro_err = astro_sim_at_hlt(astro, &at_hlt))
+            goto failure;
 
-        const astro_err_t *astro_err;
-        if (astro_err = wait_on_and_exec_command(astro))
-            astro_sim_die(astro, astro_err);
+        if (at_hlt || ctx->break_next) {
+            ctx->break_next = false;
+
+            if (astro_err = wait_on_and_exec_command(astro))
+                goto failure;
+        }
     }
+
+    return;
+
+    failure:
+    astro_sim_die(astro, astro_err);
 }
 
 // Networking shit
@@ -588,13 +599,11 @@ static const astro_err_t *write_mem_command(astro_t *astro, const char *args,
 
 static const astro_err_t *continue_command(astro_t *astro, const char *args,
                                            action_t *action_out) {
+    (void)astro;
     (void)args;
-    (void)action_out;
 
-    return astro_errorf(astro, "can't continue yet");
-
-    //*action_out = ACTION_CONTINUE;
-    //return NULL;
+    *action_out = ACTION_CONTINUE;
+    return NULL;
 }
 
 static const astro_err_t *step_command(astro_t *astro, const char *args,
