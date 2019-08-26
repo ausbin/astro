@@ -100,6 +100,66 @@ const astro_err_t *astro_close_gdb_server(astro_t *astro) {
     return astro_err;
 }
 
+static int cmp_addrs(const void *leftp, const void *rightp) {
+    const uint64_t *left = (const uint64_t *) leftp;
+    const uint64_t *right = (const uint64_t *) rightp;
+
+    return (*left < *right)? -1 : (*left > *right)? 1 : 0;
+}
+
+// breakpoints
+static breakpoints_t *get_addr_list(astro_t *astro, uint64_t addr) {
+    gdb_ctx_t *ctx = &astro->gdb_ctx;
+    unsigned int index = addr & BREAKPOINT_TABLE_MASK;
+    return &ctx->breakpoints[index];
+}
+
+static bool is_breakpoint(astro_t *astro, uint64_t addr) {
+    breakpoints_t *list = get_addr_list(astro, addr);
+    return !!bsearch(&addr, list->arr, list->len, sizeof (uint64_t), cmp_addrs);
+}
+
+static const astro_err_t *insert_breakpoint(astro_t *astro, uint64_t addr) {
+    const astro_err_t *astro_err = NULL;
+
+    if (is_breakpoint(astro, addr))
+        return NULL;
+
+    breakpoints_t *list = get_addr_list(astro, addr);
+
+    if (list->cap == list->len) {
+        // Need to grow backing array
+        size_t new_cap = list->cap * 2 + 1;
+        uint64_t *new_arr = realloc(list->arr, new_cap * sizeof (uint64_t));
+        if (!new_arr) {
+            astro_err = astro_perror(astro, "realloc breakpoint array");
+            goto failure;
+        }
+        list->cap = new_cap;
+        list->arr = new_arr;
+    }
+
+    list->arr[list->len++] = addr;
+    qsort(list->arr, list->len, sizeof (uint64_t), cmp_addrs);
+
+    failure:
+    return astro_err;
+}
+
+static void remove_breakpoint(astro_t *astro, uint64_t addr) {
+    breakpoints_t *list = get_addr_list(astro, addr);
+    uint64_t *match = bsearch(&addr, list->arr, list->len, sizeof (uint64_t), cmp_addrs);
+
+    if (!match)
+        return;
+
+    // Hack to move the address to the end of the list (so we can
+    // decrease the length) because I'm lazy
+    *match = MAX_ADDR;
+    qsort(list->arr, list->len, sizeof (uint64_t), cmp_addrs);
+    list->len--;
+}
+
 void breakpoint_code_hook(uc_engine *uc, uint64_t address, uint32_t size,
                           void *user_data) {
     (void)uc;
@@ -115,7 +175,9 @@ void breakpoint_code_hook(uc_engine *uc, uint64_t address, uint32_t size,
         if (astro_err = astro_sim_at_hlt(astro, &at_hlt))
             goto failure;
 
-        if (at_hlt || ctx->break_next) {
+        bool breakpoint = is_breakpoint(astro, address);
+
+        if (at_hlt || breakpoint || ctx->break_next) {
             ctx->break_next = false;
 
             if (astro_err = wait_on_and_exec_command(astro))
@@ -148,6 +210,12 @@ static const astro_err_t *step_command(astro_t *astro, const char *args,
                                        action_t *action_out);
 static const astro_err_t *reason_command(astro_t *astro, const char *args,
                                          action_t *action_out);
+static const astro_err_t *insert_breakpoint_command(astro_t *astro,
+                                                    const char *args,
+                                                    action_t *action_out);
+static const astro_err_t *remove_breakpoint_command(astro_t *astro,
+                                                    const char *args,
+                                                    action_t *action_out);
 
 // Who needs a hashmap when you have memory
 static const command_func_t commands[256] = {
@@ -158,6 +226,8 @@ static const command_func_t commands[256] = {
     ['c'] = continue_command,
     ['s'] = step_command,
     ['?'] = reason_command,
+    ['Z'] = insert_breakpoint_command,
+    ['z'] = remove_breakpoint_command,
 };
 
 static unsigned char calc_checksum(const char *buf,
@@ -357,16 +427,13 @@ const astro_err_t *wait_on_and_exec_command(astro_t *astro) {
         if (at_hlt) {
             if (astro_err = send_response(astro, "W00"))
                 goto failure;
-        } else if (ctx->action == ACTION_STEP) {
+        } else {
             // TODO: may not be correct. This only handles #3 above, what
             //       about segfaults?
-            // Tell gdb that single-stepping is a hardware breakpoint
-            if (astro_err = send_response(astro, "S05hwbreak:"))
+            // Can represent a single-step or a breakpoint, gdb can
+            // decide which
+            if (astro_err = send_response(astro, "S05"))
                 goto failure;
-        } else if (ctx->action == ACTION_CONTINUE) {
-            // TODO: implement
-            astro_err = astro_errorf(astro, "can't handle continue yet");
-            goto failure;
         }
 
         // We've sent a response, so now we want an ack
@@ -625,6 +692,91 @@ static const astro_err_t *reason_command(astro_t *astro, const char *args,
     // Send the status response now
     if (astro_err = send_stopped_response(astro))
         goto failure;
+
+    *action_out = ACTION_WAIT;
+
+    failure:
+    return astro_err;
+}
+
+static const astro_err_t *parse_z_packet(astro_t *astro, const char *args,
+                                         uint64_t *addr_out, bool *resp_sent_out) {
+    const astro_err_t *astro_err = NULL;
+    const char *ptr = args;
+
+    *resp_sent_out = false;
+
+    // We only support software breakpoints
+    if (*ptr != '0') {
+        if (astro_err = send_response(astro, ""))
+            goto failure;
+
+        *resp_sent_out = true;
+    }
+    ptr++;
+
+    if (*ptr != ',') {
+        astro_err = astro_errorf(astro, "unexpected char \\x%02x != ',' in Z "
+                                        "packet", *ptr);
+        goto failure;
+    }
+    ptr++;
+
+    uint64_t addr = 0;
+
+    while (*ptr && *ptr != ',') {
+        addr = addr << 4 | read_hex_char(*ptr);
+        ptr++;
+    }
+
+    *addr_out = addr;
+
+    failure:
+    return astro_err;
+}
+
+static const astro_err_t *insert_breakpoint_command(astro_t *astro,
+                                                    const char *args,
+                                                    action_t *action_out) {
+    (void)astro;
+
+    const astro_err_t *astro_err = NULL;
+    uint64_t addr;
+    bool resp_sent;
+
+    if (astro_err = parse_z_packet(astro, args, &addr, &resp_sent))
+        goto failure;
+
+    if (!resp_sent) {
+        if (astro_err = insert_breakpoint(astro, addr))
+            goto failure;
+
+        if (astro_err = send_response(astro, "OK"))
+            goto failure;
+    }
+
+    *action_out = ACTION_WAIT;
+
+    failure:
+    return astro_err;
+}
+
+static const astro_err_t *remove_breakpoint_command(astro_t *astro,
+                                                    const char *args,
+                                                    action_t *action_out) {
+    const astro_err_t *astro_err = NULL;
+    uint64_t addr;
+    bool resp_sent;
+
+    if (astro_err = parse_z_packet(astro, args, &addr, &resp_sent))
+        goto failure;
+
+    if (!resp_sent) {
+        remove_breakpoint(astro, addr);
+
+        if (astro_err = send_response(astro, "OK"))
+            goto failure;
+    }
 
     *action_out = ACTION_WAIT;
 

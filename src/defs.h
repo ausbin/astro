@@ -85,11 +85,21 @@ typedef enum {
     ACTION_CONTINUE,
 } action_t;
 
+#define BREAKPOINT_TABLE_SIZE 16
+#define BREAKPOINT_TABLE_MASK 0xf
+
+typedef struct {
+    size_t len;
+    size_t cap;
+    uint64_t *arr;
+} breakpoints_t;
+
 typedef struct {
     bool debugging;
     bool break_next;
     action_t action;
     unsigned int len;
+    breakpoints_t breakpoints[BREAKPOINT_TABLE_SIZE];
     char connbuf[256];
     char argbuf[256];
     int sockfd;
