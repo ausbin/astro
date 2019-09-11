@@ -181,8 +181,12 @@ void astro_escape_str(const char *in, char *out) {
     *out = '\0';
 }
 
-void astro_sim_die(astro_t *astro, const astro_err_t *astro_err) {
+void astro_sim_die(astro_t *astro, const astro_err_t *astro_err,
+                   astro_err_type_t err_type) {
     astro->exec_err = astro_err;
+    astro->exec_err_type = err_type;
+
+    astro_gdb_handle_exec_err(astro);
 
     uc_err err;
     // TODO: create some kind of chained astro_err_t

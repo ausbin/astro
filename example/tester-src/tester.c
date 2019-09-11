@@ -104,13 +104,13 @@ const astro_err_t *tester_run_test(tester_t *tester, test_t *test, bool gdb) {
     if ((astro_err = astro_new(tester->elf_path, &astro)))
         goto failure;
 
-    if (!gdb || (astro_err = astro_host_gdb_server(astro)))
+    if (gdb && (astro_err = astro_host_gdb_server(astro)))
         goto failure;
 
     astro_err = test->func(test, astro);
 
     const astro_err_t *close_err;
-    if (!gdb || (close_err = astro_close_gdb_server(astro)))
+    if (gdb && (close_err = astro_close_gdb_server(astro)))
         astro_err = close_err;
 
     failure:

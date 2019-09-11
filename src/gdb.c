@@ -7,13 +7,9 @@
 // TODO: Don't log directly to stderr
 
 static const astro_err_t *wait_on_ack(astro_t *astro);
+static const astro_err_t *wait_on_and_exec_command(astro_t *astro);
 
 const astro_err_t *astro_gdb_ctx_setup(astro_t *astro) {
-    astro->gdb_ctx.debugging = false;
-    astro->gdb_ctx.break_next = false;
-    astro->gdb_ctx.action = ACTION_WAIT;
-    astro->gdb_ctx.len = 0;
-    bzero(&astro->gdb_ctx.connbuf, sizeof astro->gdb_ctx.connbuf);
     astro->gdb_ctx.sockfd = -1;
     astro->gdb_ctx.connfd = -1;
     return NULL;
@@ -188,7 +184,13 @@ void breakpoint_code_hook(uc_engine *uc, uint64_t address, uint32_t size,
     return;
 
     failure:
-    astro_sim_die(astro, astro_err);
+    astro_sim_die(astro, astro_err, ASTRO_ERR_INTERNAL);
+}
+
+void astro_gdb_handle_exec_err(astro_t *astro) {
+    gdb_ctx_t *ctx = &astro->gdb_ctx;
+    if (ctx->debugging)
+        wait_on_and_exec_command(astro);
 }
 
 // Networking shit
@@ -216,6 +218,9 @@ static const astro_err_t *insert_breakpoint_command(astro_t *astro,
 static const astro_err_t *remove_breakpoint_command(astro_t *astro,
                                                     const char *args,
                                                     action_t *action_out);
+static const astro_err_t *send_signal_command(astro_t *astro,
+                                              const char *args,
+                                              action_t *action_out);
 
 // Who needs a hashmap when you have memory
 static const command_func_t commands[256] = {
@@ -228,6 +233,8 @@ static const command_func_t commands[256] = {
     ['?'] = reason_command,
     ['Z'] = insert_breakpoint_command,
     ['z'] = remove_breakpoint_command,
+    ['C'] = send_signal_command,
+    ['S'] = send_signal_command,
 };
 
 static unsigned char calc_checksum(const char *buf,
@@ -275,6 +282,8 @@ static const astro_err_t *wait_on_ack(astro_t *astro) {
         goto failure;
     }
 
+    fprintf(stderr, "got ack\n");
+
     failure:
     return astro_err;
 }
@@ -289,6 +298,8 @@ static const astro_err_t *send_ack(astro_t *astro) {
         astro_err = astro_perror(astro, "gdb server: write");
         goto failure;
     }
+
+    fprintf(stderr, "sent ack\n");
 
     failure:
     return astro_err;
@@ -402,14 +413,7 @@ static const astro_err_t *send_response(astro_t *astro, const char *response) {
     return astro_err;
 }
 
-static const astro_err_t *send_stopped_response(astro_t *astro) {
-    // Always claim we stopped for no reason (signal # 0x00), which is a
-    // complete lie
-    // TODO: fix
-    return send_response(astro, "S00");
-}
-
-const astro_err_t *wait_on_and_exec_command(astro_t *astro) {
+static const astro_err_t *wait_on_and_exec_command(astro_t *astro) {
     const astro_err_t *astro_err = NULL;
     gdb_ctx_t *ctx = &astro->gdb_ctx;
 
@@ -418,8 +422,8 @@ const astro_err_t *wait_on_and_exec_command(astro_t *astro) {
         goto failure;
 
     // Must be a reason we stopped. Possibilities by decreasing priority:
-    //  1. breakpoint (TODO)
-    //  2. segfault
+    //  1. segfault
+    //  2. breakpoint
     //  3. stepping (step only)
     //  4. program finished
     if (ctx->action == ACTION_STEP || ctx->action == ACTION_CONTINUE) {
@@ -427,11 +431,21 @@ const astro_err_t *wait_on_and_exec_command(astro_t *astro) {
         if (at_hlt) {
             if (astro_err = send_response(astro, "W00"))
                 goto failure;
+        } else if (astro->exec_err_type) {
+            const char *response;
+            if (astro->exec_err_type == ASTRO_ERR_SEGFAULT) {
+                response = "S0b"; // SIGSEGV
+            } else { // ASTRO_ERR_INTERNAL
+                response = "S06"; // SIGABRT. Arbitrary choice but students
+                                  //          should be familiar with it
+            }
+            if (astro_err = send_response(astro, response))
+                goto failure;
         } else {
-            // TODO: may not be correct. This only handles #3 above, what
-            //       about segfaults?
-            // Can represent a single-step or a breakpoint, gdb can
-            // decide which
+            // If we're not stopping because of an error or halt, this is
+            // either a single-step or a breakpoint. So send a response
+            // which can represent either a single-step or a breakpoint, gdb
+            // can decide which it is
             if (astro_err = send_response(astro, "S05"))
                 goto failure;
         }
@@ -480,6 +494,15 @@ const astro_err_t *wait_on_and_exec_command(astro_t *astro) {
             // response (`$#00') should be returned."
             if (astro_err = send_response(astro, ""))
                 goto failure;
+        }
+
+        // If we're still executing and haven't encountered an error but
+        // the command requested to kill the program, go for it
+        if (astro->sim_state == ASTRO_SIM_EXEC &&
+                astro->exec_err_type == ASTRO_ERR_NONE &&
+                ctx->action == ACTION_KILL) {
+            astro_err = astro_errorf(astro, "simulation killed by gdb");
+            goto failure;
         }
 
         // if the action is step or continue, we haven't responded yet
@@ -690,7 +713,7 @@ static const astro_err_t *reason_command(astro_t *astro, const char *args,
     const astro_err_t *astro_err = NULL;
 
     // Send the status response now
-    if (astro_err = send_stopped_response(astro))
+    if (astro_err = send_response(astro, "S00"))
         goto failure;
 
     *action_out = ACTION_WAIT;
@@ -779,6 +802,31 @@ static const astro_err_t *remove_breakpoint_command(astro_t *astro,
     }
 
     *action_out = ACTION_WAIT;
+
+    failure:
+    return astro_err;
+}
+
+static const astro_err_t *send_signal_command(astro_t *astro,
+                                              const char *args,
+                                              action_t *action_out) {
+    const astro_err_t *astro_err = NULL;
+
+    // violation of protocol!
+    if (strlen(args) != 2) {
+        astro_err = send_response(astro, "");
+        goto failure;
+    }
+
+    // Tada wow, we exited instantly with the signal sent! What a
+    // coincidence...
+    char resp[4];
+    snprintf(resp, sizeof resp, "X%s", args);
+
+    if (astro_err = send_response(astro, resp))
+        goto failure;
+
+    *action_out = ACTION_KILL;
 
     failure:
     return astro_err;

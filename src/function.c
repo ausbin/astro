@@ -115,6 +115,7 @@ const astro_err_t *astro_call_function(astro_t *astro, uint64_t *ret, size_t n,
 
     astro->halted = false;
     astro->exec_err = NULL;
+    astro->exec_err_type = ASTRO_ERR_NONE;
     astro->sim_state = ASTRO_SIM_EXEC;
 
     // We need to break on the first instruction if we're debugging. We
@@ -422,7 +423,8 @@ const astro_err_t *astro_stub_ret(astro_t *astro, uint64_t retval) {
 }
 
 void astro_stub_die(astro_t *astro, const astro_err_t *astro_err) {
-    astro_sim_die(astro, astro_err);
+    // TODO: will this always be an internal error?
+    astro_sim_die(astro, astro_err, ASTRO_ERR_INTERNAL);
 }
 
 const astro_err_t *astro_stub_setup(astro_t *astro, void *user_data,

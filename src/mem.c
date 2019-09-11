@@ -52,7 +52,9 @@ static bool handle_segfault(uc_engine *uc, uc_mem_type type, uint64_t address,
         return true;
     } else {
         const char *description = address? "in the middle of nowhere" : "NULL";
-        astro->exec_err = make_segfault_error(astro, type, address, size, description);
+        const astro_err_t *segfault_err = make_segfault_error(
+                astro, type, address, size, description);
+        astro_sim_die(astro, segfault_err, ASTRO_ERR_SEGFAULT);
         return false;
     }
 }
@@ -107,9 +109,10 @@ static bool validate_heap_access_hook(uc_engine *uc, uc_mem_type type,
     // a block (UNTOUCHED above should always cover this case)
     description = "unknown location in the heap";
 
-    segfault:
-    astro->exec_err = make_segfault_error(astro, type, address, size,
-                                          description);
+    segfault: ;
+    const astro_err_t *segfault_err = make_segfault_error(
+            astro, type, address, size, description);
+    astro_sim_die(astro, segfault_err, ASTRO_ERR_SEGFAULT);
     return false;
 }
 

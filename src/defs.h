@@ -83,6 +83,7 @@ typedef enum {
     ACTION_WAIT,
     ACTION_STEP,
     ACTION_CONTINUE,
+    ACTION_KILL,
 } action_t;
 
 #define BREAKPOINT_TABLE_SIZE 16
@@ -107,7 +108,7 @@ typedef struct {
 } gdb_ctx_t;
 
 // astro.c
-enum astro_sim_state {
+typedef enum {
     // Not currently simulating student code
     ASTRO_SIM_NO,
     // Their code was being executed but encountered a runtime issue
@@ -118,7 +119,15 @@ enum astro_sim_state {
     //  stack/registers are in a different state when the student calls
     //  a stub versus when they cause a runtime error)
     ASTRO_SIM_STUB
-};
+} astro_sim_state_t;
+
+// Used to decide what signal to send back to gdb (when hosting a gdb
+// server) when a student instruction causes an error
+typedef enum {
+    ASTRO_ERR_NONE,
+    ASTRO_ERR_SEGFAULT,
+    ASTRO_ERR_INTERNAL
+} astro_err_type_t;
 
 struct astro {
     FILE *binfp;
@@ -128,8 +137,10 @@ struct astro {
     mem_ctx_t mem_ctx;
     gdb_ctx_t gdb_ctx;
     bool halted;
+    // Don't set this by hand -- use astro_sim_die()
     const astro_err_t *exec_err;
-    enum astro_sim_state sim_state;
+    astro_err_type_t exec_err_type;
+    astro_sim_state_t sim_state;
 
     // Function mocking (useful for meta-testing, that is writing tests
     // for tests to make sure astro/tester works)
@@ -190,7 +201,8 @@ extern const astro_err_t *astro_uc_perror(astro_t *astro, const char *s, uc_err 
 extern const astro_err_t *astro_elf_perror(astro_t *astro, const char *s);
 extern const astro_err_t *astro_dwarf_perror(astro_t *astro, const char *s);
 extern const char *astro_intern_str(astro_t *astro, const char *src);
-extern void astro_sim_die(astro_t *astro, const astro_err_t *astro_err);
+extern void astro_sim_die(astro_t *astro, const astro_err_t *astro_err,
+                          astro_err_type_t err_type);
 
 // function.c
 extern const astro_err_t *astro_make_backtrace(astro_t *astro,
@@ -201,8 +213,8 @@ extern const astro_err_t *astro_sim_at_hlt(astro_t *astro, bool *yes_out);
 
 // gdb.c pt. 2
 extern const astro_err_t *astro_gdb_ctx_setup(astro_t *astro);
-extern const astro_err_t *wait_on_and_exec_command(astro_t *astro);
 extern void breakpoint_code_hook(uc_engine *uc, uint64_t address,
                                  uint32_t size, void *user_data);
+extern void astro_gdb_handle_exec_err(astro_t *astro);
 
 #endif
